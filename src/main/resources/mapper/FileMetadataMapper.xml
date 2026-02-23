@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.cors.mapper.FileMetadataMapper">
+
+    <select id="listAllAncestors" parameterType="long" resultType="com.cors.domain.entity.FileMetadata">
+        WITH RECURSIVE ancestors AS (SELECT id, parent_id, 0 AS level
+                                     FROM file_metadata
+                                     WHERE id = #{id}
+
+                                     UNION ALL
+
+                                     SELECT f.id, f.parent_id, a.level + 1
+                                     FROM file_metadata f
+                                              INNER JOIN ancestors a ON f.id = a.parent_id)
+        SELECT id, parent_id, level
+        FROM ancestors
+        ORDER BY level DESC, id; -- 从根开始到当前节点
+    </select>
+
+    <select id="listAllDescendants" parameterType="long" resultType="com.cors.domain.entity.FileMetadata">
+        WITH RECURSIVE descendants AS (SELECT id, parent_id, 0 AS level
+                                       FROM file_metadata
+                                       WHERE id = #{id}
+
+                                       UNION ALL
+
+                                       SELECT f.id, f.parent_id, d.level + 1
+                                       FROM file_metadata f
+                                                INNER JOIN descendants d ON f.parent_id = d.id)
+        SELECT id, parent_id, level
+        FROM descendants
+        ORDER BY level, id; -- 从当前节点开始到叶子节点
+    </select>
+
+    <select id="selectAllDescendants" resultType="com.cors.domain.entity.FileMetadata">
+        WITH RECURSIVE file_tree AS (
+            -- 1. 锚点查询 (Anchor)
+            SELECT *
+            FROM file_metadata
+            WHERE id = #{id}
+
+            UNION ALL
+
+            -- 2. 递归查询 (Recursive)
+            SELECT f.*
+            FROM file_metadata f
+                     INNER JOIN file_tree ft ON f.parent_id = ft.id
+        )
+        SELECT * FROM file_tree
+    </select>
+</mapper>

@@ -1,0 +1,153 @@
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: ${SERVER_SERVLET_CONTEXT_PATH:/api/v1}
+spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  servlet:
+    multipart:
+      max-file-size: ${SERVLET_MULTIPART_MAX_FILE_SIZE:512MB} # 单个文件的大小上限
+      max-request-size: ${SERVLET_MULTIPART_MAX_REQUEST_SIZE:512MB} # 整个请求（包含所有文件+表单数据）的大小上限
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:redis}
+      database: ${REDIS_DATABASE:0}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:10000}
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DATASOURCE_HOST:localhost}:${DATASOURCE_PORT:3306}/${DATASOURCE_DATABASE:gd_cors}?allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&useSSL=false&characterEncoding=UTF-8
+    username: ${DATASOURCE_USERNAME:root}
+    password: ${DATASOURCE_PASSWORD:root}
+    hikari:
+      maximum-pool-size: ${THREAD_POOL_CORE_SIZE:30} # 至少要大于消费者总线程数
+  sql:
+    init:
+      mode: ${SQL_INIT_MODE:embedded}
+      schema-locations: classpath:sql/schema.sql
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:rabbitmq}
+    password: ${RABBITMQ_PASSWORD:rabbitmq}
+    virtual-host: ${RABBITMQ_VIRTUAL_HOST:/gd-cors}
+    publisher-confirm-type: correlated # 开启确认机制，必须设为 correlated
+    publisher-returns: true # 开启消息回退（路由失败时触发 ReturnsCallback）
+    template:
+      mandatory: true # 开启使 ReturnCallback 生效
+      # 网络故障或服务宕机级别重试
+      retry:
+        enabled: true # 开启发送端的 Spring 自动重试
+        initial-interval: 1000ms
+        max-attempts: 3
+        multiplier: 2.0  # 间隔乘数，下一次重试间隔为 2s, 4s...
+    # 消费者线程池
+    listener:
+      simple:
+        acknowledge-mode: manual
+        concurrency: ${RABBITMQ_CONSUMER_CONCURRENCY:5} # 初始消费者线程数
+        max-concurrency: ${RABBITMQ_CONSUMER_MAX_CONCURRENCY:10} # 最大消费者线程数
+        prefetch: ${RABBITMQ_CONSUMER_PREFETCH:1} # 每次只预取 1 条，防止一个消费者积压太多任务
+
+langchain4j:
+  open-ai:
+    online-chat-model:
+      base-url: ${LANGCHAIN4J_OPENAI_ONLINE_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+      api-key: ${gd-cors.langchain4j.open-ai.model.zhipu-api-key}
+      model-name: ${LANGCHAIN4J_OPENAI_ONLINE_MODEL_NAME:glm-4-plus}
+      log-requests: ${LANGCHAIN4J_OPENAI_ONLINE_LOG_REQUESTS:true}
+      log-responses: ${LANGCHAIN4J_OPENAI_ONLINE_LOG_RESPONSES:true}
+      timeout: ${LANGCHAIN4J_OPENAI_ONLINE_TIMEOUT:120s}
+
+  ollama:
+
+    qwen-chat-model:
+      base-url: ${LANGCHAIN4J_OLLAMA_CHAT_BASE_URL:http://localhost:11434}
+      model-name: ${LANGCHAIN4J_OLLAMA_CHAT_MODEL_NAME:qwen3:8b}
+      log-requests: ${LANGCHAIN4J_OLLAMA_CHAT_LOG_REQUESTS:true}
+      log-responses: ${LANGCHAIN4J_OLLAMA_CHAT_LOG_RESPONSES:true}
+      timeout: ${LANGCHAIN4J_OLLAMA_CHAT_TIMEOUT:120s}
+
+    qwen-vl-model:
+      base-url: ${LANGCHAIN4J_OLLAMA_VL_BASE_URL:http://localhost:11434}
+      model-name: ${LANGCHAIN4J_OLLAMA_VL_MODEL_NAME:qwen3-vl:8b}
+      temperature: ${LANGCHAIN4J_OLLAMA_VL_TEMPERATURE:0.1}
+      log-requests: ${LANGCHAIN4J_OLLAMA_VL_LOG_REQUESTS:true}
+      log-responses: ${LANGCHAIN4J_OLLAMA_VL_LOG_RESPONSES:true}
+      timeout: ${LANGCHAIN4J_OLLAMA_VL_TIMEOUT:120s}
+
+    qwen-embedding-model:
+      base-url: ${LANGCHAIN4J_OLLAMA_EMBEDDING_BASE_URL:http://localhost:11434}
+      model-name: ${LANGCHAIN4J_OLLAMA_EMBEDDING_MODEL_NAME:qwen3-embedding:8b}
+      log-requests: ${LANGCHAIN4J_OLLAMA_EMBEDDING_LOG_REQUESTS:true}
+      log-responses: ${LANGCHAIN4J_OLLAMA_EMBEDDING_LOG_RESPONSES:true}
+      timeout: ${LANGCHAIN4J_OLLAMA_EMBEDDING_TIMEOUT:120s}
+
+
+#      max-segments-per-batch: ${LANGCHAIN4J_OLLAMA_EMBEDDING_MAX_SEGMENTS_PER_BATCH:10}
+#      dimensions: ${LANGCHAIN4J_OLLAMA_EMBEDDING_DIMENSION:4096}
+
+  #    vlm-model:
+#      base-url: ${LANGCHAIN4J_OPENAI_EMBEDDING_BASE_URL:https://open.bigmodel.cn}
+#      api-key: ${gd-cors.langchain4j.open-ai.model.zhipu-api-key}
+#      model-name: ${LANGCHAIN4J_OPENAI_EMBEDDING_MODEL_NAME:glm-4.6v}
+#      log-requests: ${LANGCHAIN4J_OPENAI_LOG_REQUESTS:true}
+#      log-responses: ${LANGCHAIN4J_OPENAI_LOG_RESPONSES:true}
+
+#    online-streaming-chat-model:
+#      base-url: ${LANGCHAIN4J_OPENAI_ONLINE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+#      api-key: ${gd-cors.langchain4j.open-ai.model.qwen-api-key}
+#      model-name: ${LANGCHAIN4J_OPENAI_ONLINE_MODEL_NAME:qwen-plus}
+#      log-requests: ${LANGCHAIN4J_OPENAI_LOG_REQUESTS:true}
+#      log-responses: ${LANGCHAIN4J_OPENAI_LOG_RESPONSES:true}
+#      timeout: ${LANGCHAIN4J_OPENAI_ONLINE_TIMEOUT:120s}
+#
+#    embedding-model:
+#      base-url: ${LANGCHAIN4J_OPENAI_EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+#      api-key: ${gd-cors.langchain4j.open-ai.model.qwen-api-key}
+#      model-name: text-embedding-v4
+#      log-requests: true
+#      log-responses: true
+#      max-segments-per-batch: 10
+#      dimensions: ${LANGCHAIN4J_OPENAI_EMBEDDING_DIMENSION:2048}
+  chat:
+    memory:
+      max-messages: ${LANGCHAIN4J_CHAT_MEMORY_MAX_MESSAGES:50}
+
+  web-search-engine:
+    tavily:
+      # 连接到 Tavily 的远程 MCP 服务器
+      mcp-server-url: ${LANGCHAIN4J_WEB_SEARCH_ENGINE_TAVILY_MCP_SERVER_URL:https://mcp.tavily.com/mcp/?tavilyApiKey=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}
+      # 封装 Tool
+      api-key: ${gd-cors.langchain4j.web-search-engine.tavily.api-key}
+      max-results: ${LANGCHAIN4J_WEB_SEARCH_ENGINE_TAVILY_MAX_RESULTS:5}
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: ${MYBATIS_CONFIGURATION_MAP_UNDERSCORE_TO_CAMEL_CASE:true}
+
+milvus:
+  host: ${MILVUS_HOST:localhost}
+  port: ${MILVUS_PORT:19530}
+  token: ${MILVUS_TOKEN:milvus-token}
+  database: ${MILVUS_DATABASE:gd_cors}
+  collection: ${MILVUS_COLLECTION:text_embeddings}
+  dimension: ${MILVUS_DIMENSION:4096}
+
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin}
+  bucket: ${MINIO_BUCKET_FILES:gd-cors-files}
+
+user:
+  password-length: ${USER_PASSWORD_LENGTH:6}
+
+jwt:
+  access-expire: ${JWT_ACCESS_EXPIRE:30}
+  refresh-expire: ${JWT_REFRESH_EXPIRE:7}
+  security: ${JWT_SECURITY:cors}
+
+

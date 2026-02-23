@@ -1,0 +1,67 @@
+{
+  "name": "ai-hub",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "lint-staged": {
+    "*.{js,ts,vue}": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  },
+  "scripts": {
+    "dev": "vite --host=0.0.0.0",
+    "build": "run-p type-check \"build-only {@}\" --",
+    "build:check": "run-p type-check build-only",
+    "build:analyze": "cross-env ANALYZE=true vite build",
+    "preview": "vite preview",
+    "build-only": "vite build",
+    "type-check": "vue-tsc --build"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "@heroicons/vue": "^2.2.0",
+    "@microsoft/fetch-event-source": "^2.0.1",
+    "@popperjs/core": "^2.11.8",
+    "@sentry/vue": "^10.30.0",
+    "@vueuse/components": "^12.7.0",
+    "@vueuse/core": "^12.7.0",
+    "ai-hub": "file:",
+    "axios": "^1.13.0",
+    "dompurify": "^3.2.4",
+    "element-plus": "2.11.3",
+    "filesize": "^11.0.13",
+    "fs-extra": "^11.2.0",
+    "highlight.js": "^11.11.1",
+    "marked": "^15.0.7",
+    "naive-ui": "^2.41.0",
+    "pinia": "^3.0.1",
+    "sass": "^1.85.1",
+    "vue": "^3.4.15",
+    "vue-renderer-markdown": "^0.0.63-beta.0",
+    "vue-router": "^4.2.5"
+  },
+  "devDependencies": {
+    "@tsconfig/node22": "^22.0.0",
+    "@types/node": "^22.13.4",
+    "@vitejs/plugin-vue": "^6.0.3",
+    "@vue/tsconfig": "^0.7.0",
+    "consola": "^3.4.2",
+    "cross-env": "^10.1.0",
+    "esbuild": "^0.27.2",
+    "eslint-plugin-vue": "^10.6.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "npm-run-all2": "^7.0.2",
+    "path": "^0.12.7",
+    "prettier": "3.6.2",
+    "rollup-plugin-visualizer": "^6.0.5",
+    "typescript": "~5.7.3",
+    "unplugin-auto-import": "^20.3.0",
+    "unplugin-vue-components": "^30.0.0",
+    "vite": "npm:rolldown-vite@latest",
+    "vite-plugin-style-import": "^2.0.0",
+    "vite-plugin-vue-devtools": "^7.7.2",
+    "vue-tsc": "^2.2.2"
+  }
+}

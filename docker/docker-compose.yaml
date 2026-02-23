@@ -1,0 +1,529 @@
+# ============================================
+# 环境变量配置
+# ============================================
+# 存储路径前缀，可通过环境变量 STORAGE_PATH_1 覆盖
+# 默认值：/data/gd-cors
+# 使用方式：
+#   1. 在 .env 文件中设置：STORAGE_PATH_1=/custom/path
+#   2. 在命令行中设置：export STORAGE_PATH_1=/custom/path
+#   3. 在 docker-compose.yaml 同目录下创建 .env 文件
+# ============================================
+
+services:
+  gd-cors-mysql:
+    user: "0:0" # 进程以 root（UID=0, GID=0）对挂载目录拥有完全读写权限
+    image: mysql:8.0.36
+    ports:
+      - "3306:3306"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-root}
+    command:
+      - mysqld
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+    volumes:
+      - ./mysql/init:/docker-entrypoint-initdb.d  # 初始化脚本（相对路径）
+      - ${STORAGE_PATH_1}/mysql:/var/lib/mysql  # MySQL 数据目录（Bind Mount）
+    networks:
+      - gd-cors-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  #  # 修复初始化脚本目录权限（让 Docker 能读取 SQL 文件）
+  #  sudo chmod -R 755 ./mysql/init
+  #
+  #  # 修复数据存储目录权限（给 MySQL 用户 999 写入权限）
+  #  sudo chown -R 999:999 ${STORAGE_PATH_1}/mysql
+  #  sudo chmod -R 770 ${STORAGE_PATH_1}/mysql
+  #
+  #  # 修复 Redis 权限（防止它也报错）
+  #  sudo chown -R 999:999 ${STORAGE_PATH_1}/redis
+  #  sudo chmod -R 770 ${STORAGE_PATH_1}/redis
+
+  gd-cors-redis:
+    user: "0:0"
+    image: redis:8.0.3
+    ports:
+      - "6379:6379"
+    volumes:
+      - ${STORAGE_PATH_1}/redis:/data  # Redis 数据目录（Bind Mount）
+      - ${STORAGE_PATH_1}/redis/logs:/var/log/redis  # Redis 日志目录（Bind Mount）
+    command: >
+      redis-server
+      --requirepass ${REDIS_ROOT_PASSWORD}
+      --maxmemory ${REDIS_MAXMEMORY}
+      --maxmemory-policy ${REDIS_POLICY}
+      --appendonly yes
+      --appendfsync everysec
+      --bind 0.0.0.0
+      --protected-mode yes
+      --save 900 1 --save 300 10 --save 60 10000
+    environment:
+      - REDIS_PASSWORD=${REDIS_ROOT_PASSWORD:-redis}
+      - REDIS_MAXMEMORY=${REDIS_MAXMEMORY:-512mb}
+      - REDIS_POLICY=${REDIS_POLICY:-noeviction}
+    networks:
+      - gd-cors-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+#  # 1. 将所有权交给 RabbitMQ 容器用户 (UID 999)
+#  sudo chown -R 999:999 ${STORAGE_PATH_1}/rabbitmq
+#
+#  # 2. 修改目录权限
+#  sudo find ${STORAGE_PATH_1}/rabbitmq -type d -exec chmod 750 {} +
+#
+#  # 3. 关键：修改 Cookie 文件权限为仅拥有者可读 (400)
+#  # 如果文件已存在，执行这一步；如果不存在，RabbitMQ 启动时会自动创建（只要目录权限对了）
+#  sudo chmod 400 ${STORAGE_PATH_1}/rabbitmq/.erlang.cookie 2>/dev/null || true
+
+  gd-cors-rabbitmq:
+    user: "0:0"
+    image: rabbitmq:3.8-management
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-rabbitmq}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-rabbitmq}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_DEFAULT_VHOST:-/gd-cors}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - ${STORAGE_PATH_1}/rabbitmq:/var/lib/rabbitmq  # RabbitMQ 数据目录（Bind Mount）
+      - ${STORAGE_PATH_1}/rabbitmq/logs:/var/log/rabbitmq  # RabbitMQ 日志目录（Bind Mount）
+    networks:
+      - gd-cors-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s       # 缩短间隔，每5秒检查一次，能让 App 更快启动
+      timeout: 5s
+      retries: 10
+      start_period: 15s  # 15秒后再正式计入失败次数
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+#  gd-cors-minio1:
+#    image: minio/minio:latest
+#    environment:
+#      TZ: ${TZ:-Asia/Shanghai}
+#      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+#      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+#      MINIO_CONSOLE_ADDRESS: ":9090"
+#    volumes:
+#      - ${STORAGE_PATH_1}/minio/minio1/data1:/data1
+#      - ${STORAGE_PATH_1}/minio/minio1/config:/root/.minio
+#    command:
+#      - server
+#      - http://gd-cors-minio1/data1
+#      - http://gd-cors-minio2/data1
+#      - http://gd-cors-minio3/data1
+#      - http://gd-cors-minio4/data1
+#    ports:
+#      - "9000:9000"
+#      - "9090:9090"
+#    networks:
+#      - gd-cors-network
+#    restart: unless-stopped
+#    healthcheck:
+#      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+#      interval: 30s
+#      timeout: 20s
+#      retries: 5
+#
+#  gd-cors-minio2:
+#    image: minio/minio:latest
+#    environment:
+#      TZ: ${TZ:-Asia/Shanghai}
+#      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+#      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+#      MINIO_CONSOLE_ADDRESS: ":9090"
+#    volumes:
+#      - ${STORAGE_PATH_1}/minio/minio2/data1:/data1
+#      - ${STORAGE_PATH_1}/minio/minio2/config:/root/.minio
+#    command:
+#      - server
+#      - http://gd-cors-minio1/data1
+#      - http://gd-cors-minio2/data1
+#      - http://gd-cors-minio3/data1
+#      - http://gd-cors-minio4/data1
+#    networks:
+#      - gd-cors-network
+#    restart: unless-stopped
+#    healthcheck:
+#      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+#      interval: 30s
+#      timeout: 20s
+#      retries: 5
+#
+#  gd-cors-minio3:
+#    image: minio/minio:latest
+#    environment:
+#      TZ: ${TZ:-Asia/Shanghai}
+#      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+#      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+#      MINIO_CONSOLE_ADDRESS: ":9090"
+#    volumes:
+#      - ${STORAGE_PATH_1}/minio/minio3/data1:/data1
+#      - ${STORAGE_PATH_1}/minio/minio3/config:/root/.minio
+#    command:
+#      - server
+#      - http://gd-cors-minio1/data1
+#      - http://gd-cors-minio2/data1
+#      - http://gd-cors-minio3/data1
+#      - http://gd-cors-minio4/data1
+#    networks:
+#      - gd-cors-network
+#    restart: unless-stopped
+#    healthcheck:
+#      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+#      interval: 30s
+#      timeout: 20s
+#      retries: 5
+#
+#  gd-cors-minio4:
+#    image: minio/minio:latest
+#    environment:
+#      TZ: ${TZ:-Asia/Shanghai}
+#      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+#      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+#      MINIO_CONSOLE_ADDRESS: ":9090"
+#    volumes:
+#      - ${STORAGE_PATH_1}/minio/minio4/data1:/data1
+#      - ${STORAGE_PATH_1}/minio/minio4/config:/root/.minio
+#    command:
+#      - server
+#      - http://gd-cors-minio1/data1
+#      - http://gd-cors-minio2/data1
+#      - http://gd-cors-minio3/data1
+#      - http://gd-cors-minio4/data1
+#    networks:
+#      - gd-cors-network
+#    restart: unless-stopped
+#    healthcheck:
+#      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+#      interval: 30s
+#      timeout: 20s
+#      retries: 5
+  gd-cors-minio:
+    user: "0:0"
+    image: minio/minio:latest
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_CONSOLE_ADDRESS: ":9090"
+    volumes:
+      - ${STORAGE_PATH_1}/minio/data1:/data1
+      - ${STORAGE_PATH_1}/minio/data2:/data2
+      - ${STORAGE_PATH_1}/minio/data3:/data3
+      - ${STORAGE_PATH_1}/minio/data4:/data4
+      - ${STORAGE_PATH_1}/minio/config:/root/.minio
+    command: server /data1 /data2 /data3 /data4
+    ports:
+      - "9000:9000"
+      - "9090:9090"
+    networks:
+      - gd-cors-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+
+
+  # ================================
+  # Milvus 所需服务
+  # ================================
+  gd-cors-milvus-etcd:
+    user: "0:0"
+    image: quay.io/coreos/etcd:v3.5.18
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ${STORAGE_PATH_1}/milvus/etcd:/etcd
+    command: >
+      etcd -advertise-client-urls=http://gd-cors-milvus-etcd:2379
+           -listen-client-urls http://0.0.0.0:2379
+           --data-dir /etcd
+    networks:
+      - gd-cors-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "etcdctl", "endpoint", "health" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  gd-cors-milvus:
+    user: "0:0"
+    image: milvusdb/milvus:v2.6.6
+#    image: milvusdb/milvus:v2.6.7-gpu
+    command: [ "milvus", "run", "standalone" ]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: gd-cors-milvus-etcd:2379
+      MINIO_ADDRESS: gd-cors-minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+
+      # MinIO/S3 模式
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_EMBEDDINGS:-gd-cors-milvus}
+      S3_USEIAM: "false"
+
+      MQ_TYPE: rocksmq
+    volumes:
+      - ./milvus/configs/milvus.yaml:/milvus/configs/milvus.yaml
+      - ${STORAGE_PATH_1}/milvus/data:/var/lib/milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    networks:
+      - gd-cors-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9091/healthz" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              capabilities: [ "gpu" ]
+#              device_ids: [ "3" ]
+    depends_on:
+      - gd-cors-milvus-etcd
+      - gd-cors-minio
+
+  # ================================
+  # 应用服务 Spring Boot
+  # ================================
+#  gd-cors-app:
+#    user: "0:0"
+#    build:
+#      context: ..
+#      dockerfile: Dockerfile
+#    image: gd-cors-app:latest
+#    ports:
+#      - "${SERVER_PORT:-8080}:8080"
+#    extra_hosts:
+#      - "host.docker.internal:host-gateway"
+#    volumes:
+#      - ${STORAGE_PATH_1}/app/logs:/app/logs
+#    networks:
+#      - gd-cors-network
+#    environment:
+#      # --- Server ---
+#      SERVER_PORT: ${SERVER_PORT}
+#      SERVER_SERVLET_CONTEXT_PATH: ${SERVER_SERVLET_CONTEXT_PATH}
+#      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+#      SERVLET_MULTIPART_MAX_FILE_SIZE: ${SERVLET_MULTIPART_MAX_FILE_SIZE}
+#      SERVLET_MULTIPART_MAX_REQUEST_SIZE: ${SERVLET_MULTIPART_MAX_REQUEST_SIZE}
+#
+#      # --- Redis ---
+#      REDIS_HOST: ${REDIS_HOST}
+#      REDIS_PORT: ${REDIS_PORT}
+#      REDIS_PASSWORD: ${REDIS_PASSWORD}
+#      REDIS_DATABASE: ${REDIS_DATABASE}
+#      REDIS_CONNECT_TIMEOUT: ${REDIS_CONNECT_TIMEOUT}
+#
+#      # --- MySQL ---
+#      DATASOURCE_HOST: ${DATASOURCE_HOST}
+#      DATASOURCE_PORT: ${DATASOURCE_PORT}
+#      DATASOURCE_DATABASE: ${DATASOURCE_DATABASE}
+#      DATASOURCE_USERNAME: ${DATASOURCE_USERNAME}
+#      DATASOURCE_PASSWORD: ${DATASOURCE_PASSWORD}
+#      SQL_INIT_MODE: ${SQL_INIT_MODE}
+#      THREAD_POOL_CORE_SIZE: ${THREAD_POOL_CORE_SIZE}
+#
+#      # --- RabbitMQ ---
+#      RABBITMQ_HOST: ${RABBITMQ_HOST}
+#      RABBITMQ_PORT: ${RABBITMQ_PORT}
+#      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME}
+#      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+#      RABBITMQ_VIRTUAL_HOST: ${RABBITMQ_VIRTUAL_HOST}
+#      RABBITMQ_CONSUMER_CONCURRENC: ${RABBITMQ_CONSUMER_CONCURRENC}
+#      RABBITMQ_CONSUMER_MAX_CONCURRENCY: ${RABBITMQ_CONSUMER_MAX_CONCURRENCY}
+#      RABBITMQ_CONSUMER_PREFETCH: ${RABBITMQ_CONSUMER_PREFETCH}
+#
+#      # --- LangChain4j (Online - Zhipu/GLM) ---
+#      LANGCHAIN4J_OPENAI_ONLINE_BASE_URL: ${LANGCHAIN4J_OPENAI_ONLINE_BASE_URL}
+#      LANGCHAIN4J_OPENAI_ONLINE_MODEL_NAME: ${LANGCHAIN4J_OPENAI_ONLINE_MODEL_NAME}
+#      LANGCHAIN4J_OPENAI_ONLINE_MODEL_ZHIPU_API_KEY: ${LANGCHAIN4J_OPENAI_ONLINE_MODEL_ZHIPU_API_KEY}
+#      LANGCHAIN4J_OPENAI_ONLINE_LOG_REQUESTS: ${LANGCHAIN4J_OPENAI_ONLINE_LOG_REQUESTS}
+#      LANGCHAIN4J_OPENAI_ONLINE_LOG_RESPONSES: ${LANGCHAIN4J_OPENAI_ONLINE_LOG_RESPONSES}
+#      LANGCHAIN4J_OPENAI_ONLINE_TIMEOUT: ${LANGCHAIN4J_OPENAI_ONLINE_TIMEOUT}
+#
+#
+#      # --- LangChain4j (Local - Ollama) ---
+#      LANGCHAIN4J_OLLAMA_CHAT_BASE_URL: ${LANGCHAIN4J_OLLAMA_CHAT_BASE_URL}
+#      LANGCHAIN4J_OLLAMA_CHAT_MODEL_NAME: ${LANGCHAIN4J_OLLAMA_CHAT_MODEL_NAME}
+#      LANGCHAIN4J_OLLAMA_CHAT_LOG_REQUESTS: ${LANGCHAIN4J_OLLAMA_CHAT_LOG_REQUESTS}
+#      LANGCHAIN4J_OLLAMA_CHAT_LOG_RESPONSES: ${LANGCHAIN4J_OLLAMA_CHAT_LOG_RESPONSES}
+#      LANGCHAIN4J_OLLAMA_CHAT_TIMEOUT: ${LANGCHAIN4J_OLLAMA_CHAT_TIMEOUT}
+#
+#      LANGCHAIN4J_OLLAMA_VL_BASE_URL: ${LANGCHAIN4J_OLLAMA_VL_BASE_URL}
+#      LANGCHAIN4J_OLLAMA_VL_MODEL_NAME: ${LANGCHAIN4J_OLLAMA_VL_MODEL_NAME}
+#      LANGCHAIN4J_OLLAMA_VL_TEMPERATURE: ${LANGCHAIN4J_OLLAMA_VL_TEMPERATURE}
+#      LANGCHAIN4J_OLLAMA_VL_LOG_REQUESTS: ${LANGCHAIN4J_OLLAMA_VL_LOG_REQUESTS}
+#      LANGCHAIN4J_OLLAMA_VL_LOG_RESPONSES: ${LANGCHAIN4J_OLLAMA_VL_LOG_RESPONSES}
+#      LANGCHAIN4J_OLLAMA_VL_TIMEOUT: ${LANGCHAIN4J_OLLAMA_VL_TIMEOUT}
+#
+#      # --- LangChain4j (Embedding) ---
+#      LANGCHAIN4J_OLLAMA_EMBEDDING_BASE_URL: ${LANGCHAIN4J_OLLAMA_EMBEDDING_BASE_URL}
+#      LANGCHAIN4J_OLLAMA_EMBEDDING_MODEL_NAME: ${LANGCHAIN4J_OLLAMA_EMBEDDING_MODEL_NAME}
+#      LANGCHAIN4J_OLLAMA_EMBEDDING_LOG_REQUESTS: ${LANGCHAIN4J_OLLAMA_EMBEDDING_LOG_REQUESTS}
+#      LANGCHAIN4J_OLLAMA_EMBEDDING_LOG_RESPONSES: ${LANGCHAIN4J_OLLAMA_EMBEDDING_LOG_RESPONSES}
+#      LANGCHAIN4J_OLLAMA_EMBEDDING_TIMEOUT: ${LANGCHAIN4J_OLLAMA_EMBEDDING_TIMEOUT}
+#
+#      LANGCHAIN4J_CHAT_MEMORY_MAX_MESSAGES: ${LANGCHAIN4J_CHAT_MEMORY_MAX_MESSAGES}
+#
+#      # --- LangChain4j (Search - Tavily) ---
+#      LANGCHAIN4J_WEB_SEARCH_ENGINE_TAVILY_MCP_SERVER_URL: ${LANGCHAIN4J_WEB_SEARCH_ENGINE_TAVILY_MCP_SERVER_URL}
+#      LANGCHAIN4J_TAVILY_API_KEY: ${LANGCHAIN4J_TAVILY_API_KEY}
+#      LANGCHAIN4J_WEB_SEARCH_ENGINE_TAVILY_MAX_RESULTS: ${LANGCHAIN4J_WEB_SEARCH_ENGINE_TAVILY_MAX_RESULTS}
+#
+#      # --- Milvus ---
+#      MILVUS_HOST: ${MILVUS_HOST}
+#      MILVUS_PORT: ${MILVUS_PORT}
+#      MILVUS_TOKEN: ${MILVUS_TOKEN}
+#      MILVUS_DATABASE: ${MILVUS_DATABASE}
+#      MILVUS_COLLECTION: ${MILVUS_COLLECTION}
+#      MILVUS_DIMENSION: ${MILVUS_DIMENSION}
+#
+#      # --- MinIO ---
+#      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+#      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+#      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+#      MINIO_BUCKET_FILES: ${MINIO_BUCKET_FILES}
+#
+#      # --- JWT / Security ---
+#      USER_PASSWORD_LENGTH: ${USER_PASSWORD_LENGTH}
+#      JWT_ACCESS_EXPIRE: ${JWT_ACCESS_EXPIRE}
+#      JWT_REFRESH_EXPIRE: ${JWT_REFRESH_EXPIRE}
+#      JWT_SECURITY: ${JWT_SECURITY}
+#
+##    deploy:
+##      resources:
+##        limits:
+##          cpus: '24.0'       # 限制使用 24 个核心（防止解析大文件时占满全机 CPU）
+##          memory: 64G        # 限制容器最大使用 64G 内存
+##        reservations:
+##          memory: 16G         # 启动时最少预留 16G 内存
+#
+#    restart: unless-stopped
+#    logging:
+#      driver: "local"
+#      options:
+#        max-size: "10m"
+#        max-file: "3"
+#        compress: "true"
+#    depends_on:
+#      - gd-cors-mysql
+#      - gd-cors-redis
+#      - gd-cors-rabbitmq
+#      - gd-cors-milvus-etcd
+#      - gd-cors-milvus
+#      - gd-cors-minio
+
+
+  # ================================
+  # 前端服务 Vue3 + Nginx
+  # ================================
+#  gd-cors-web:
+#    build:
+#      context: ..
+#      dockerfile: Dockerfile
+#    image: gd-cors-web:latest
+#    ports:
+#      - "${WEB_PORT:-80}:80"
+#    networks:
+#      - gd-cors-network
+#    restart: unless-stopped
+#    logging:
+#      driver: "local"
+#      options:
+#        max-size: "5m"
+#        max-file: "3"
+#        compress: "true"
+
+
+
+# ============================================
+# 存储卷配置说明
+# ============================================
+# 所有存储均使用 Bind Mount（绑定挂载），不再使用 Named Volume
+#
+# 存储路径配置：
+# - 通过环境变量 STORAGE_PATH_1 配置存储路径前缀
+# - 默认值：/data/gd-cors
+# - 可在 .env 文件中设置，或在命令行中 export
+#
+# 存储目录结构（宿主机，默认 /data/gd-cors/）：
+# ${STORAGE_PATH_1:-/data/gd-cors}/
+#   ├── mysql/
+#   │   └── logs/   # MySQL 日志目录
+#   ├── redis/
+#   │   └── logs/   # Redis 日志目录
+#   ├── rabbitmq/
+#   │   └── logs/   # RabbitMQ 日志目录
+#   ├── logs/       # 应用日志目录（如果启用应用服务）
+#   └── files/      # 用户上传文件目录（如果启用应用服务）
+#
+# 部署前准备：
+# 1. 设置存储路径（可选，使用默认值可跳过）：
+#    # 方式1：在 .env 文件中设置（推荐）
+#    echo "STORAGE_PATH_1=/data/gd-cors" > .env
+#    # 方式2：在命令行中设置
+#    export STORAGE_PATH_1=/data/gd-cors
+# 2. 创建存储目录（使用环境变量或默认路径）：
+#    STORAGE_PATH_1=${STORAGE_PATH_1:-/data/gd-cors}
+#    sudo mkdir -p ${STORAGE_PATH_1}/{mysql/logs,redis/logs,rabbitmq/logs,logs,files}
+# 3. 设置目录权限（根据容器用户ID调整，通常为 1000:1000）：
+#    sudo chown -R 1000:1000 ${STORAGE_PATH_1}
+# 4. 确保存储目录有足够空间（建议使用独立数据盘）
+#
+# 使用示例：
+# - 默认路径：/data/gd-cors
+# - 自定义路径：export STORAGE_PATH_1=/mnt/data/gd-cors
+# - 独立数据盘：export STORAGE_PATH_1=/data-disk/gd-cors
+# ============================================
+
+networks:
+  gd-cors-network:
+    driver: bridge

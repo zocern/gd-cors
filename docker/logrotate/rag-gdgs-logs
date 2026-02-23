@@ -1,0 +1,80 @@
+# ============================================
+# RAG-GDGS 中间件日志轮转配置
+# ============================================
+# 说明：
+# 1. 此配置文件用于 logrotate，管理中间件日志文件的自动轮转和删除
+# 2. 安装方式：
+#    sudo cp docker/logrotate/rag-gdgs-logs /etc/logrotate.d/rag-gdgs-logs
+#    sudo chmod 644 /etc/logrotate.d/rag-gdgs-logs
+# 3. 如果使用自定义存储路径，需要修改下面的路径
+# 4. 测试配置：
+#    sudo logrotate -d /etc/logrotate.d/rag-gdgs-logs
+# 5. 手动执行轮转：
+#    sudo logrotate -f /etc/logrotate.d/rag-gdgs-logs
+# ============================================
+
+# 存储路径前缀（默认：/data/rag-gdgs）
+# ⚠️ 如果使用自定义路径，请修改下面的所有路径
+# 例如：如果 RAG_GDGS_STORAGE_PATH=/mnt/data/rag-gdgs，则修改为 /mnt/data/rag-gdgs
+
+# MySQL 日志
+/data/rag-gdgs/mysql/logs/*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 mysql mysql
+    sharedscripts
+    postrotate
+        # 如果需要，可以在这里添加 MySQL 日志刷新命令
+        # docker exec rag-gdgs-mysql mysqladmin flush-logs 2>/dev/null || true
+    endscript
+}
+
+# Redis 日志
+/data/rag-gdgs/redis/logs/*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 redis redis
+    sharedscripts
+    postrotate
+        # Redis 日志通常不需要特殊处理
+    endscript
+}
+
+# RabbitMQ 日志
+/data/rag-gdgs/rabbitmq/logs/*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 rabbitmq rabbitmq
+    sharedscripts
+    postrotate
+        # RabbitMQ 日志通常不需要特殊处理
+    endscript
+}
+
+# 应用日志（如果启用应用服务）
+/data/rag-gdgs/logs/*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 appuser appgroup
+    sharedscripts
+    postrotate
+        # 应用日志通常不需要特殊处理
+    endscript
+}
+
