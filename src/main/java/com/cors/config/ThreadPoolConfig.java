@@ -1,4 +1,4 @@
-package com.cors.vector;
+package com.cors.config;
 
 import org.jetbrains.annotations.NotNull;
 import org.springframework.context.annotation.Bean;

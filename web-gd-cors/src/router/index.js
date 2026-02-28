@@ -1,10 +1,10 @@
 import { createRouter, createWebHistory } from "vue-router";
-import { useUserStore } from "../stores/user.js";
+import { useUserStore } from "../stores/user";
 
 // 懒加载组件封装，支持错误处理
 function lazyLoad(view) {
   return () =>
-    import(`../views/${view}.vue`).catch(() => {
+    import(`../views/${view}/index.vue`).catch(() => {
       console.error(`Failed to load view: ${view}`);
     });
 }
@@ -67,9 +67,15 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: "/vector-status",
+    name: "VectorStatus",
+    component: lazyLoad("VectorStatus"),
+    meta: { requiresAuth: true },
+  },
+  {
     path: "/:pathMatch(.*)*",
     name: "NotFound",
-    component: () => import("../views/NotFound.vue"),
+    component: () => import("../views/NotFound/index.vue"),
   },
 ];
 

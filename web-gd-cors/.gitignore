@@ -31,4 +31,4 @@ coverage
 
 # 项目排除路径
 /vite.config.js
-!/src/views/User.vue
+!/src/views/User/index.vue

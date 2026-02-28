@@ -6,11 +6,21 @@ import {
   Close,
   FolderAdd,
   Operation,
+  Search,
+  Upload,
 } from "@element-plus/icons-vue";
-import { computed, nextTick, ref, watch } from "vue";
-import { fileAPI } from "../services/file.ts";
+import {
+  computed,
+  nextTick,
+  ref,
+  watch,
+  onBeforeUnmount,
+  onMounted,
+} from "vue";
+import { fileAPI } from "../../services/file.ts";
 import { useRoute, useRouter } from "vue-router";
 import { filesize } from "filesize";
+import SystemDashboard from "../../components/SystemDashboard.vue";
 import type {
   FileUploadInfo,
   FileShowType,
@@ -18,9 +28,10 @@ import type {
   FileRawInfoType,
   editingType,
   TrailItemType,
-} from "../interface/TfileSystem.ts";
+} from "../../interface/TfileSystem.ts";
 import type { AxiosProgressEvent } from "axios";
 import type { VirtualElement } from "@popperjs/core";
+import { debounce } from "lodash-es";
 
 const deleteVirtualRef = ref<VirtualElement | null>(null);
 
@@ -40,7 +51,15 @@ const folderCache = new Map();
 const formatDate = (dateString: Date) => {
   if (!dateString) return "-";
   const date = new Date(dateString);
-  return date.toLocaleString("zh-CN");
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 };
 
 // 当前路径的 ID 数组（从根到当前文件夹）
@@ -656,9 +675,20 @@ const downloadFile = async (id: string, name: string) => {
   isDownloading.value = false;
 };
 
-// 计算文件大小
+// 计算文件大小（返回完整字符串）
 const calculateFileSize = (size: string): string => {
   return filesize(size, { standard: "jedec" });
+};
+
+// 计算文件大小，拆分为数字和单位
+const parseFileSize = (size: string): { number: string; unit: string } => {
+  const full = filesize(size, { standard: "jedec" });
+  const parts = full.split(/\s+/);
+  if (parts.length >= 2) {
+    const unit = parts.pop()!;
+    return { number: parts.join(" "), unit };
+  }
+  return { number: full, unit: "" };
 };
 
 // 前往上传界面
@@ -670,6 +700,250 @@ const gotoUpload = () => {
     },
   });
 };
+
+/*搜索相关
+ * */
+// 搜索状态
+const isSearchExpanded = ref<boolean>(false);
+const searchKeyword = ref<string>("");
+const highlightKeyword = ref<string>(""); // 用于高亮显示的关键词（请求完成后更新）
+const isSearching = ref<boolean>(false);
+const searchResults = ref<FileRawInfoType[]>([]);
+const isInSearchMode = ref<boolean>(false);
+
+// 搜索输入框引用
+const searchInputRef = ref<any>(null);
+// 搜索容器引用
+const searchContainerRef = ref<HTMLElement | null>(null);
+
+// 展开搜索框
+const expandSearch = () => {
+  if (!isSearchExpanded.value) {
+    isSearchExpanded.value = true;
+    nextTick(() => {
+      if (searchInputRef.value) {
+        searchInputRef.value.focus();
+      }
+    });
+  }
+};
+
+// 点击外部区域收起搜索框
+const handleClickOutside = (event: MouseEvent) => {
+  if (
+    isSearchExpanded.value &&
+    searchContainerRef.value &&
+    !searchContainerRef.value.contains(event.target as Node)
+  ) {
+    collapseSearch();
+  }
+};
+
+// 监听点击事件
+onMounted(() => {
+  document.addEventListener("click", handleClickOutside);
+});
+
+// 收起搜索框（如果没有搜索关键词且不在搜索模式）
+const collapseSearch = () => {
+  // 如果正在搜索模式或有搜索关键词，保持展开
+  if (isInSearchMode.value || searchKeyword.value) return;
+
+  // 直接切换状态，CSS transition 会自动处理动画
+  isSearchExpanded.value = false;
+};
+
+// 高亮搜索关键词函数
+const highlightText = (text: string, keyword: string): string => {
+  if (!keyword || !text) {
+    // 如果没有关键词，返回转义后的文本
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  // 转义 HTML 特殊字符，防止 XSS 攻击
+  const escapeHtml = (str: string) => {
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  };
+
+  // 转义正则表达式的特殊字符
+  const escapeRegex = (str: string) => {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  };
+
+  // 转义正则表达式的特殊字符，创建正则表达式
+  const trimmedKeyword = keyword.trim();
+  const escapedKeyword = escapeRegex(trimmedKeyword);
+  if (!escapedKeyword) {
+    return escapeHtml(text);
+  }
+
+  const regex = new RegExp(`(${escapedKeyword})`, "gi");
+
+  // 在原始文本上匹配，然后转义 HTML 并添加高亮标记
+  const result = text.replace(regex, (match) => {
+    return `<span class="search-highlight">${escapeHtml(match)}</span>`;
+  });
+
+  // 如果没有匹配到，返回转义后的原始文本
+  if (result === text) {
+    return escapeHtml(text);
+  }
+
+  return result;
+};
+
+/*防抖搜索
+ * */
+/* ---------------- 搜索与分页逻辑核心修改 ---------------- */
+
+// 分页状态
+const searchPage = ref(1);
+const searchPageSize = ref(15); // 假设每页 20 条
+const hasMoreData = ref(true); // 是否还有更多数据
+const isLoadingMore = ref(false); // 是否正在加载更多
+
+// 修改 performSearch 函数，增加 append 参数
+const performSearch = async (append = false) => {
+  const keyword = searchKeyword.value.trim();
+  if (!keyword) {
+    // 空搜索处理...
+    searchResults.value = [];
+    isInSearchMode.value = false;
+    highlightKeyword.value = "";
+    await reloadContent();
+    return;
+  }
+
+  // 如果是新搜索（非追加），重置状态
+  if (!append) {
+    searchPage.value = 1;
+    hasMoreData.value = true;
+    searchResults.value = [];
+    isSearching.value = true; // 首次加载显示 loading
+  } else {
+    isLoadingMore.value = true; // 追加加载
+  }
+
+  isInSearchMode.value = true;
+
+  try {
+    // 注意：这里假设你的 API 支持分页参数 (keyword, page, size)
+    // 如果后端不支持，你需要让后端加上，或者前端拿到所有数据后自己做 slice 分页
+    const res = await fileAPI.getSearchFiles(
+      keyword,
+      searchPage.value,
+      searchPageSize.value,
+    );
+
+    if (res.code === 200) {
+      const newRecords = res.data.records || [];
+
+      // 判断是否还有更多数据 (如果返回数量小于页大小，说明没了)
+      if (newRecords.length < searchPageSize.value) {
+        hasMoreData.value = false;
+      }
+
+      if (append) {
+        // 追加模式：合并数组
+        searchResults.value = [...searchResults.value, ...newRecords];
+      } else {
+        // 覆盖模式
+        searchResults.value = newRecords;
+        highlightKeyword.value = keyword;
+      }
+
+      // 更新显示的列表，重置编辑状态
+      fileList.value = searchResults.value.map((item: FileRawInfoType) => ({
+        ...item,
+        editing: 0,
+      }));
+    } else {
+      ElMessage.error("搜索失败：" + res.msg);
+      if (!append) {
+        searchResults.value = [];
+        highlightKeyword.value = "";
+      }
+    }
+  } catch (error) {
+    console.error("搜索失败:", error);
+    ElMessage.warning("搜索失败！请联系管理员");
+  } finally {
+    isSearching.value = false;
+    isLoadingMore.value = false;
+  }
+};
+
+// 无限滚动触发的方法
+const loadMoreSearch = () => {
+  // 核心守卫：必须在搜索模式 + 还有更多数据 + 没有正在加载
+  if (
+    !isInSearchMode.value ||
+    !hasMoreData.value ||
+    isLoadingMore.value ||
+    isSearching.value
+  ) {
+    return;
+  }
+  searchPage.value++;
+  performSearch(true); // 传入 true 表示追加
+};
+
+// 无限滚动的禁用条件
+const infiniteScrollDisabled = computed(() => {
+  // 如果不在搜索模式，或者正在加载，或者没有更多数据了，就禁用
+  return (
+    !isInSearchMode.value ||
+    isLoadingMore.value ||
+    isSearching.value ||
+    !hasMoreData.value
+  );
+});
+const debouncedSearch = debounce(() => {
+  performSearch();
+}, 500);
+// 搜索关键词变化处理
+const handleSearchInput = () => {
+  debouncedSearch();
+};
+
+// 清除搜索
+const clearSearch = async () => {
+  searchKeyword.value = "";
+  highlightKeyword.value = ""; // 清空高亮关键词
+  searchResults.value = [];
+  isInSearchMode.value = false;
+  // 清除后自动收起（通过 blur 事件触发）
+  await reloadContent();
+};
+
+// 点击文件夹时退出搜索模式
+const handleFolderClick = async (id: string) => {
+  if (isInSearchMode.value) {
+    // 退出搜索模式
+    searchKeyword.value = "";
+    highlightKeyword.value = ""; // 清空高亮关键词
+    searchResults.value = [];
+    isInSearchMode.value = false;
+    isSearchExpanded.value = false;
+  }
+  await pushId(id);
+};
+
+// 清理定时器和事件监听
+onBeforeUnmount(() => {
+  debouncedSearch.cancel();
+  document.removeEventListener("click", handleClickOutside);
+});
 
 /*更新文件相关
  * */
@@ -734,7 +1008,7 @@ const handleFileChange = async (e: Event) => {
 </script>
 
 <template>
-  <el-container>
+  <el-container class="file-table-container">
     <input
       ref="fileInput"
       type="file"
@@ -742,7 +1016,7 @@ const handleFileChange = async (e: Event) => {
       @change="handleFileChange"
       :multiple="false"
     />
-    <el-main style="margin: 0 400px">
+    <el-main class="file-table-main">
       <!-- 上传进度条 -->
       <div v-if="isUploading" class="upload-progress-fixed">
         <div style="margin-bottom: 10px">
@@ -769,7 +1043,11 @@ const handleFileChange = async (e: Event) => {
 
       <div class="header-section">
         <!-- 面包屑 -->
-        <el-breadcrumb style="margin: 0" :separator-icon="ArrowRight">
+        <el-breadcrumb
+          class="breadcrumb-container"
+          v-show="!isSearchExpanded"
+          :separator-icon="ArrowRight"
+        >
           <el-breadcrumb-item
             v-for="(item, index) in breadcrumbTrail"
             :key="`${item.id}-${index}`"
@@ -780,14 +1058,45 @@ const handleFileChange = async (e: Event) => {
           </el-breadcrumb-item>
         </el-breadcrumb>
 
-        <!-- 文件上传按钮（会跳转到上传界面） -->
-        <el-button
-          type="default"
-          size="large"
-          class="upload-button"
-          @click="gotoUpload()"
-          round
+        <!-- 搜索框容器 -->
+        <div
+          class="search-container"
+          :class="{ expanded: isSearchExpanded }"
+          ref="searchContainerRef"
         >
+          <!-- 搜索按钮 -->
+          <el-button
+            class="search-button"
+            :class="{ hidden: isSearchExpanded }"
+            type="default"
+            size="large"
+            round
+            @click="expandSearch"
+          >
+            <el-icon><Search /></el-icon>
+          </el-button>
+
+          <!-- 搜索输入框 -->
+          <div class="search-input-wrapper">
+            <el-input
+              ref="searchInputRef"
+              v-model="searchKeyword"
+              placeholder="搜索文件/文件夹"
+              class="search-input"
+              clearable
+              @input="handleSearchInput"
+              @clear="clearSearch"
+              @blur="collapseSearch"
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
+          </div>
+        </div>
+
+        <!-- 文件上传按钮（会跳转到上传界面） -->
+        <el-button type="default" size="large" @click="gotoUpload()" round>
           <el-icon><Upload /></el-icon>
           上传文件
         </el-button>
@@ -805,135 +1114,177 @@ const handleFileChange = async (e: Event) => {
       </div>
 
       <div
-        v-for="file in fileList"
-        :key="file.id"
-        class="file-item"
-        :class="{ 'folder-drop-hover': hoverFolderId === file.id }"
+        class="file-list-scroll-wrapper"
+        v-infinite-scroll="loadMoreSearch"
+        :infinite-scroll-disabled="infiniteScrollDisabled"
+        :infinite-scroll-distance="50"
       >
-        <!-- 编辑状态 -->
-        <div v-if="file.editing !== 0" class="file-item-editing">
-          <el-input class="name-input" v-model="file.name" clearable />
-          <el-button
-            type="primary"
-            @click="
-              checkOrRename(file.editing!, currentFolderId, file.id, file.name)
-            "
-            size="small"
-            :loading="isConfirmButtonLoading(file)"
-            :disabled="isConfirmButtonDisabled(file)"
-          >
-            <el-icon><Check /></el-icon>
-          </el-button>
-          <el-button @click="cancelEdit()" size="small">
-            <el-icon><Close /></el-icon>
-          </el-button>
-        </div>
-
-        <!-- 正常状态 -->
-        <div v-else class="file-item-normal">
-          <!-- 文件夹 -->
+        <div
+          v-for="file in fileList"
+          :key="file.id"
+          class="file-item"
+          :class="{ 'folder-drop-hover': hoverFolderId === file.id }"
+        >
+          <!-- 编辑状态 -->
           <div
-            v-if="file.folder"
-            class="folder-link file-name"
-            roleType="button"
-            tabindex="0"
-            @click="pushId(file.id)"
-            @keydown.enter="pushId(file.id)"
-            @keydown.space.prevent="pushId(file.id)"
-            @dragover.prevent="onFolderDragOver"
-            @dragenter.prevent="onFolderDragEnter(file)"
-            @dragleave.prevent="onFolderDragLeave(file)"
-            @drop="onFolderDrop(file)"
+            v-if="file.editing !== 0"
+            class="file-item-editing"
+            :data-folder="file.folder"
           >
-            {{ file.name }}
-          </div>
-
-          <!-- 文件 -->
-          <div
-            v-else
-            class="file-name"
-            draggable="true"
-            @dragstart="onFileDragStart(file)"
-          >
-            <span class="file-name-text">{{ file.name }}</span>
-            <span class="file-size-text">{{
-              calculateFileSize(file.size)
-            }}</span>
-          </div>
-          <el-dropdown trigger="click" size="large" :hide-on-click="false">
+            <el-input
+              class="name-input"
+              size="small"
+              v-model="file.name"
+              clearable
+            />
             <el-button
-              size="default"
-              :disabled="isAnyEditing && file.editing === 0"
+              type="primary"
+              @click="
+                checkOrRename(
+                  file.editing!,
+                  currentFolderId,
+                  file.id,
+                  file.name,
+                )
+              "
+              size="small"
+              :loading="isConfirmButtonLoading(file)"
+              :disabled="isConfirmButtonDisabled(file)"
             >
-              菜单
-              <el-icon class="el-icon--right" size="large"
-                ><Operation
-              /></el-icon>
+              <el-icon><Check /></el-icon>
             </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <!-- 文件已上传信息时显示：更新和查看 -->
-                <template v-if="!file.folder && file.association">
+            <el-button @click="cancelEdit()" size="small">
+              <el-icon><Close /></el-icon>
+            </el-button>
+          </div>
+
+          <!-- 正常状态 -->
+          <div v-else class="file-item-normal">
+            <div
+              :class="['file-name', { 'folder-link': file.folder }]"
+              :role="file.folder ? 'button' : undefined"
+              :tabindex="file.folder ? 0 : undefined"
+              :draggable="!file.folder"
+              @click="file.folder ? handleFolderClick(file.id) : undefined"
+              @keydown.enter="
+                file.folder ? handleFolderClick(file.id) : undefined
+              "
+              @keydown.space.prevent="
+                file.folder ? handleFolderClick(file.id) : undefined
+              "
+              @dragover.prevent="file.folder ? onFolderDragOver : undefined"
+              @dragenter.prevent="
+                file.folder ? onFolderDragEnter(file) : undefined
+              "
+              @dragleave.prevent="
+                file.folder ? onFolderDragLeave(file) : undefined
+              "
+              @drop="file.folder ? onFolderDrop(file) : undefined"
+              @dragstart="!file.folder ? onFileDragStart(file) : undefined"
+            >
+              <span :class="file.folder ? 'folder-name' : 'file-name-text'">
+                <el-tooltip placement="top">
+                  <template #content>{{ file.name }}</template>
+                  <span
+                    v-if="isInSearchMode && highlightKeyword"
+                    v-html="highlightText(file.name, highlightKeyword)"
+                  ></span>
+                  <span v-else>{{ file.name }}</span>
+                </el-tooltip>
+              </span>
+
+              <span class="file-updated-text">{{
+                formatDate(file.updated)
+              }}</span>
+              <div class="file-size-container">
+                <span class="file-size-number">{{
+                  file.folder ? "-" : parseFileSize(file.size).number
+                }}</span>
+                <span class="file-size-unit">{{
+                  file.folder ? "" : parseFileSize(file.size).unit
+                }}</span>
+              </div>
+            </div>
+            <el-dropdown trigger="click" size="large" :hide-on-click="false">
+              <el-button
+                size="default"
+                :disabled="isAnyEditing && file.editing === 0"
+              >
+                菜单
+                <el-icon class="el-icon--right" size="large"
+                  ><Operation
+                /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <!-- 文件已上传信息时显示：更新和查看 -->
+                  <template v-if="!file.folder && file.association">
+                    <el-dropdown-item
+                      @click="openUploadInfoDialog(file.id, 'update')"
+                      >更新文件信息</el-dropdown-item
+                    >
+                    <el-dropdown-item @click="clickInfoButton(file.id)"
+                      >查看文件信息</el-dropdown-item
+                    >
+                  </template>
+                  <!-- 文件未上传信息时显示：上传 -->
                   <el-dropdown-item
-                    @click="openUploadInfoDialog(file.id, 'update')"
-                    >更新文件信息</el-dropdown-item
+                    v-if="!file.folder && !file.association"
+                    @click="openUploadInfoDialog(file.id, 'upload')"
+                    >上传文件信息</el-dropdown-item
                   >
-                  <el-dropdown-item @click="clickInfoButton(file.id)"
-                    >查看文件信息</el-dropdown-item
+
+                  <el-dropdown-item
+                    @click="openFileChooser(file.id)"
+                    v-if="!file.folder"
+                    >更新文件</el-dropdown-item
                   >
-                </template>
-                <!-- 文件未上传信息时显示：上传 -->
-                <el-dropdown-item
-                  v-if="!file.folder && !file.association"
-                  @click="openUploadInfoDialog(file.id, 'upload')"
-                  >上传文件信息</el-dropdown-item
-                >
+                  <el-dropdown-item
+                    @click="downloadFile(file.id, file.name)"
+                    v-if="!file.folder"
+                    >下载</el-dropdown-item
+                  >
+                  <el-dropdown-item
+                    @click="openMoveDialog(file)"
+                    v-if="!file.folder"
+                    >移动</el-dropdown-item
+                  >
+                  <el-dropdown-item @click="clickRenameButton(file)"
+                    >重命名</el-dropdown-item
+                  >
+                  <el-dropdown-item
+                    @click="
+                      (e: MouseEvent) => {
+                        deleteTargetId = file.id;
+                        const { clientX, clientY } = e;
 
-                <el-dropdown-item
-                  @click="openFileChooser(file.id)"
-                  v-if="!file.folder"
-                  >更新文件</el-dropdown-item
-                >
-                <el-dropdown-item
-                  @click="downloadFile(file.id, file.name)"
-                  v-if="!file.folder"
-                  >下载</el-dropdown-item
-                >
-                <el-dropdown-item
-                  @click="openMoveDialog(file)"
-                  v-if="!file.folder"
-                  >移动</el-dropdown-item
-                >
-                <el-dropdown-item @click="clickRenameButton(file)"
-                  >重命名</el-dropdown-item
-                >
-                <el-dropdown-item
-                  @click="
-                    (e: MouseEvent) => {
-                      deleteTargetId = file.id;
-                      const { clientX, clientY } = e;
+                        deleteVirtualRef = {
+                          getBoundingClientRect: () =>
+                            ({
+                              width: 0,
+                              height: 0,
+                              top: clientY,
+                              bottom: clientY,
+                              left: clientX,
+                              right: clientX,
+                            }) as DOMRect,
+                        };
 
-                      deleteVirtualRef = {
-                        getBoundingClientRect: () =>
-                          ({
-                            width: 0,
-                            height: 0,
-                            top: clientY,
-                            bottom: clientY,
-                            left: clientX,
-                            right: clientX,
-                          }) as DOMRect,
-                      };
-
-                      deleteConfirmVisible = true;
-                    }
-                  "
-                >
-                  删除
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+                        deleteConfirmVisible = true;
+                      }
+                    "
+                  >
+                    删除
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+        </div>
+        <div v-if="isInSearchMode" class="loading-state-footer">
+          <p v-if="isLoadingMore">正在加载更多...</p>
+          <p v-if="!hasMoreData && fileList.length > 0">没有更多文件了</p>
+          <p v-if="!hasMoreData && fileList.length === 0">未找到相关文件</p>
         </div>
       </div>
 
@@ -1061,10 +1412,21 @@ const handleFileChange = async (e: Event) => {
       confirm-button-text="确认"
       cancel-button-text="取消"
     />
+
+    <!-- 系统监控仪表盘 -->
+    <SystemDashboard />
   </el-container>
 </template>
 
 <style scoped lang="scss">
+.file-table-container {
+  display: flex;
+  justify-content: center;
+
+  .file-table-main {
+    max-width: 1000px;
+  }
+}
 .file-item {
   font-size: 16px;
   padding: 0 16px;
@@ -1081,6 +1443,7 @@ const handleFileChange = async (e: Event) => {
   display: flex;
   align-items: center;
   min-height: 48px;
+  overflow: hidden;
 }
 
 .file-item:first-child {
@@ -1110,8 +1473,12 @@ const handleFileChange = async (e: Event) => {
 .el-breadcrumb {
   padding: 16px 24px;
   margin-bottom: 20px;
+  white-space: nowrap;
+  display: flex;
+  flex-wrap: nowrap;
 
   .el-breadcrumb__item {
+    flex-shrink: 0;
     .el-breadcrumb__inner {
       font-size: 14px;
       transition: color 0.2s ease;
@@ -1146,21 +1513,101 @@ const handleFileChange = async (e: Event) => {
   border: 1px solid var(--el-border-color);
   border-radius: 8px;
   padding: 10px 16px;
-  min-height: 50px;
-}
+  min-height: 68px;
+  overflow: hidden;
 
-.upload-button {
-  margin-left: auto;
+  .breadcrumb-container {
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--el-border-color) transparent;
+
+    &::-webkit-scrollbar {
+      height: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background-color: var(--el-border-color);
+      border-radius: 3px;
+
+      &:hover {
+        background-color: var(--el-text-color-placeholder);
+      }
+    }
+  }
 }
 
 .createFolder-button {
   margin-right: 16px;
 }
 
+.search-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  margin-right: 12px;
+  min-width: 40px;
+  height: 40px;
+  flex: 1; // 新增：占据剩余空间
+  max-width: 100%; // 新增：防止超出父容器
+}
+
+.search-button {
+  margin-left: auto;
+  min-width: 40px;
+  padding: 8px;
+  flex-shrink: 0;
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
+
+  &.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.8);
+  }
+}
+
+.search-input-wrapper {
+  position: absolute;
+  left: 0; // 从左边开始
+  right: 0; // 到右边结束（铺满父容器）
+  // width: 0;          // 移除，使用 left/right 控制
+  max-width: 0; // 初始状态：完全收起
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition:
+    max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.search-container.expanded .search-input-wrapper {
+  max-width: 100%;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.search-input {
+  width: 100%;
+
+  :deep(.el-input__wrapper) {
+    border-radius: 20px;
+  }
+}
+
 .name-input {
-  font-size: 16px;
   width: 200px;
-  min-height: 28px;
+  height: 24px;
   margin-right: 16px;
   :deep(input::placeholder) {
     color: var(--el-text-color-placeholder);
@@ -1176,7 +1623,6 @@ const handleFileChange = async (e: Event) => {
   width: 100%;
   min-height: 48px;
   background: var(--el-bg-color);
-  padding: 8px 10px;
 }
 
 .file-item-normal {
@@ -1194,13 +1640,56 @@ const handleFileChange = async (e: Event) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+
+  .file-name-text,
+  .folder-name {
+    width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
-.file-size-text {
+.file-updated-text {
+  display: inline-block;
+  text-align: center;
+
   margin-left: auto;
   flex-shrink: 0;
-  margin-right: 12px;
+  margin-right: 16px;
   color: var(--el-text-color-secondary);
+  font-size: 14px;
+
+  height: 24px;
+  line-height: 24px;
+}
+
+.file-size-container {
+  display: flex;
+  align-items: baseline;
+  margin-right: 12px;
+  min-width: 90px;
+  flex-shrink: 0;
+
+  .file-size-number {
+    display: inline-block;
+    width: 80px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    color: var(--el-text-color-secondary);
+    height: 24px;
+    line-height: 24px;
+  }
+
+  .file-size-unit {
+    display: inline-block;
+    text-align: center;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    opacity: 0.85;
+    width: 20px;
+    margin-left: auto;
+  }
 }
 
 .action-button {
@@ -1226,13 +1715,35 @@ const handleFileChange = async (e: Event) => {
   font-size: 16px;
 }
 
+/* 编辑状态下也显示图标 */
+.file-item-editing::before {
+  content: "";
+  margin-right: 8px;
+  font-size: 16px;
+}
+
+.file-item-editing[data-folder="true"]::before {
+  content: "📁";
+  height: 24px;
+}
+
+.file-item-editing[data-folder="false"]::before {
+  content: "📄";
+  height: 24px;
+}
+
 .file-item-normal .folder-link {
   color: var(--el-color-primary);
   font-weight: 600;
 }
 
-.file-item-normal .folder-link:hover {
+.file-item-normal .folder-link:hover .folder-name {
   text-decoration: underline;
+}
+
+:deep(.search-highlight) {
+  color: var(--el-color-warning-dark-2) !important;
+  display: inline !important;
 }
 
 .folder-drop-hover {
@@ -1295,5 +1806,73 @@ const handleFileChange = async (e: Event) => {
   :deep(.el-progress__text) {
     color: #fff;
   }
+}
+
+/* 1. 让整个容器铺满视口，防止 body 滚动 */
+.full-height-container {
+  height: 100vh; /* 或者 calc(100vh - 顶部导航栏高度) */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 2. 修改 el-main 样式，使其成为 Flex 容器 */
+.file-table-main.flex-column-main {
+  display: flex;
+  flex-direction: column;
+  padding: 20px; /* 根据需要调整 padding */
+  max-width: 1000px;
+  width: 100%;
+  margin: 0 auto;
+  height: 100%; /* 继承父容器高度 */
+  overflow: hidden; /* 防止 el-main 自身滚动 */
+}
+
+/* 3. 头部保持原有样式，它通常有固定高度或由内容撑开 */
+.header-section {
+  flex-shrink: 0; /* 防止头部被压缩 */
+  /* 原有样式保持不变 */
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  /* ... */
+}
+
+/* 4. 新增：文件列表滚动容器 */
+.file-list-scroll-wrapper {
+  flex: 1; /* 占据剩余所有空间 */
+  overflow-y: auto; /* 仅在此区域开启纵向滚动 */
+  overflow-x: hidden;
+  max-height: 686px;
+
+  /* 可选：美化滚动条 */
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--el-border-color);
+    border-radius: 3px;
+  }
+}
+
+/* 底部提示文字样式 */
+.loading-state-footer {
+  text-align: center;
+  padding: 10px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+/* 原有的 .file-item 样式微调 */
+.file-item {
+  /* 移除 margin-bottom: 0 以适应可能的边界塌陷，或者保持原样 */
+  /* 确保最后一项没有奇怪的边框 */
+}
+
+/* 确保第一个和最后一个圆角在滚动容器内正常显示 */
+.file-item:first-child {
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
 }
 </style>

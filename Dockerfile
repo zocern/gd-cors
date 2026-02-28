@@ -26,16 +26,7 @@ RUN apt-get update && \
 
 EXPOSE 8080
 
-#ENTRYPOINT ["java", "-jar", "app.jar"]
-
-#ENTRYPOINT ["java", \
-#    "-server", \
-#    "-Xms48g", \
-#    "-Xmx48g", \
-#    "-XX:MaxMetaspaceSize=512m", \
-#    "-XX:MaxDirectMemorySize=8g", \
-#    "-XX:+UseZGC", \
-#    "-jar", "app.jar"]
+# ENTRYPOINT ["java", "-jar", "app.jar"]
 
 ENTRYPOINT ["java", \
     "-server", \

@@ -21,7 +21,7 @@
         </el-table-column>
         <el-table-column label="角色" align="center" width="100">
           <template #default="scope">
-            <span :class="['roleType-badge', scope.row.roleType]">
+            <span :class="['role-badge', scope.row.role]">
               {{ getName(scope.row) }}
             </span>
           </template>
@@ -70,9 +70,9 @@ defineOptions({
 });
 
 import { ref, onMounted } from "vue";
-import { RootAPI } from "../services/user.ts";
-import type { UserType, PaginationInfoType } from "../interface/Troot.ts";
-import { useGetCode } from "../hooks/useTools.ts";
+import { RootAPI } from "../../services/user.ts";
+import type { UserType, PaginationInfoType } from "../../interface/Troot.ts";
+import { useGetCode } from "../../hooks/useTools.ts";
 
 const loading = ref<boolean>(false); // 加载状态
 const paginationInfo = ref<PaginationInfoType | null>(null); // 分页信息
@@ -90,8 +90,8 @@ const loadUsers = async (): Promise<void> => {
       users.value = (res.data.records || [])
         .slice()
         .sort((a: UserType, b: UserType) => {
-          const aIsAdmin = a.roleType === "ADMIN";
-          const bIsAdmin = b.roleType === "ADMIN";
+          const aIsAdmin = a.role === "ADMIN";
+          const bIsAdmin = b.role === "ADMIN";
 
           if (aIsAdmin !== bIsAdmin) {
             return aIsAdmin ? -1 : 1;
@@ -162,7 +162,7 @@ const deleteUser = (user: UserType) => {
 
 // 是否显示删除按钮
 const showButton = (user: UserType) => {
-  return user.roleType === "USER";
+  return user.role === "USER";
 };
 
 // 格式化日期
@@ -174,7 +174,7 @@ const formatDate = (user: UserType) => {
 
 // 获得用户权限信息
 const getName = (user: UserType) =>
-  user.roleType === "ADMIN" ? "管理员" : "普通用户";
+  user.role === "ADMIN" ? "管理员" : "普通用户";
 
 // 组件挂载时加载数据
 onMounted(() => {
@@ -199,7 +199,7 @@ onMounted(() => {
   }
 
   // 用户角色标签样式
-  .roleType-badge {
+  .role-badge {
     min-width: 64px;
     display: inline-block;
     text-align: center;

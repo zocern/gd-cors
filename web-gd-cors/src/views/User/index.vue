@@ -25,7 +25,7 @@ let test = debounce(dayin, 1000);
       align-items: center;
       display: flex;
       justify-content: center;
-      height: 100vh;
+      height: 100%;
     "
   >
     <el-button type="primary" size="large" @click="test"> 测试 </el-button>

@@ -115,7 +115,7 @@
     <el-main class="chat-main">
       <router-view>
         <component
-          :is="ChatRecord"
+          :is="Index"
           :chat-id="String(currentChatId)"
           @chat-created="handleChatCreated"
         />
@@ -128,8 +128,8 @@
 import { ChatDotSquare, Check, Close, More } from "@element-plus/icons-vue";
 import { computed, nextTick, onMounted, ref } from "vue";
 import { ChatBubbleLeftRightIcon } from "@heroicons/vue/24/outline";
-import ChatRecord from "./ChatRecord.vue";
-import { chatAPI } from "../services/sessions.js";
+import Index from "../ChatRecord/index.vue";
+import { chatAPI } from "../../services/sessions.js";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useSkeleton } from "@/utils/UtilShowSkeleton.ts";
 
@@ -200,7 +200,7 @@ function handleHistorySelect(index) {
   updateCurrentChatId(chatId);
 }
 
-// 当右侧 ChatRecord 创建了一个新的会话时，更新会话列表并选中该会话
+// 当右侧 Index 创建了一个新的会话时，更新会话列表并选中该会话
 function handleChatCreated(chat) {
   if (!chat?.id) return;
   const normalized = { ...chat, editing: 0 };

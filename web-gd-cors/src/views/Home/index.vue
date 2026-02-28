@@ -34,8 +34,9 @@ import { useDark } from "@vueuse/core";
 import {
   ChatBubbleLeftRightIcon,
   DocumentTextIcon,
+  TableCellsIcon,
 } from "@heroicons/vue/24/outline";
-import { UseAPI } from "../services/user.ts";
+import { UseAPI } from "../../services/user.ts";
 import type { HomeCardType } from "@/interface/Thome.ts";
 const isDark = useDark();
 
@@ -61,6 +62,13 @@ const aiApps = ref<HomeCardType[]>([
     description: "更新和管理知识库文档",
     route: "/file",
     icon: DocumentTextIcon,
+  },
+  {
+    id: 3,
+    title: "向量状态",
+    description: "查看知识库文件的向量化状态",
+    route: "/vector-status",
+    icon: TableCellsIcon,
   },
 ]);
 
@@ -89,7 +97,7 @@ onMounted(loadUserInfo);
 
 <style scoped lang="scss">
 .home {
-  min-height: 100vh;
+  flex: 1;
   padding: 2rem;
   background: var(--bg-color);
   transition: background-color 0.3s;
@@ -121,17 +129,16 @@ onMounted(loadUserInfo);
   }
 
   .cards-grid {
-    max-width: 50%;
     display: grid;
     grid-template-columns: repeat(1, 1fr);
-    gap: 0;
-    justify-items: center;
+    gap: 16px;
     padding: 1rem;
 
+    max-width: 75%;
+    margin: 0 auto;
+
     @media (min-width: 768px) {
-      grid-template-columns: repeat(2, 1fr);
-      max-width: 800px;
-      margin: 0 auto;
+      grid-template-columns: repeat(3, 1fr);
     }
   }
 

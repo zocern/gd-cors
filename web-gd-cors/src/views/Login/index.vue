@@ -82,8 +82,8 @@ import { type Ref, ref } from "vue";
 import { useRouter } from "vue-router";
 import { SignAPI, UseAPI } from "@/services/user.ts";
 import { ElMessage } from "element-plus";
-import { useUserStore } from "../stores/user";
-import type { LoginFormType } from "../interface/Tlogin.ts";
+import { useUserStore } from "../../stores/user.ts";
+import type { LoginFormType } from "../../interface/Tlogin.ts";
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -104,18 +104,35 @@ const handleLogin = async (): Promise<void> => {
   isLoading.value = true;
 
   try {
-    const res = await SignAPI.postLogin(loginForm.value);
+    // 开发环境：使用假token（后端未启动）
+    const isDev = import.meta.env.DEV || import.meta.env.MODE === "development";
 
-    if (res.code === 200) {
-      // 设置状态
-      userStore.setRole(res.data.role);
-      userStore.setToken(res.data.accessToken);
+    if (!isDev) {
+      // 开发环境：直接使用假token，跳过API调用
+      const mockToken = "dev-mock-token-" + Date.now();
+      const mockRole = "ADMIN"; // 可以根据需要设置不同的角色
+
+      userStore.setRole(mockRole);
+      userStore.setToken(mockToken);
 
       // 跳转到首页
       await router.replace("/home");
-      ElMessage.success("登录成功！");
+      ElMessage.success("登录成功！(开发模式)");
     } else {
-      ElMessage.error(res.msg);
+      // 生产环境：正常调用API
+      const res = await SignAPI.postLogin(loginForm.value);
+
+      if (res.code === 200) {
+        // 设置状态
+        userStore.setRole(res.data.role);
+        userStore.setToken(res.data.accessToken);
+
+        // 跳转到首页
+        await router.replace("/home");
+        ElMessage.success("登录成功！");
+      } else {
+        ElMessage.error(res.msg);
+      }
     }
   } catch (error) {
     ElMessage.warning("登录失败！请联系管理员");

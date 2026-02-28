@@ -32,6 +32,12 @@ const addAuthHeader = (
 ): InternalAxiosRequestConfig => {
   const { token } = useUserStore();
   if (token) config.headers.Authorization = token;
+  
+  // 如果是 FormData，删除 Content-Type，让浏览器自动设置 multipart/form-data
+  if (config.data instanceof FormData) {
+    delete config.headers["Content-Type"];
+  }
+  
   return config;
 };
 
@@ -48,26 +54,50 @@ const handleResponseError = (error: AxiosError | Error) => {
   return Promise.reject(error);
 };
 
-// 底层 Axios 实例
-const axiosInstance: AxiosInstance = axios.create({
+// ==================== Axios 实例创建 ====================
+
+/**
+ * 主实例：用于所有 API 请求（包括文件上传/下载）
+ * - 不携带 cookie（只有 refresh 接口需要）
+ * - 自动添加 Authorization header
+ * - 自动处理 401 并刷新 token
+ * - 对于 blob/arraybuffer 返回完整 AxiosResponse，其他返回 res.data
+ */
+const mainAxiosInstance: AxiosInstance = axios.create({
   baseURL: BASE_URL,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
-// 原始客户端
-const rawAxiosInstance: AxiosInstance = axios.create({
+/**
+ * Refresh 专用实例：用于刷新 token
+ * - 携带 cookie（refresh token 在 cookie 中）
+ * - 不添加 Authorization header（token 已过期）
+ * - 不经过响应拦截器（避免循环调用）
+ */
+const refreshAxiosInstance: AxiosInstance = axios.create({
   baseURL: BASE_URL,
+  withCredentials: true,
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
 
-// 请求拦截器
-axiosInstance.interceptors.request.use(addAuthHeader, handleResponseError);
-rawAxiosInstance.interceptors.request.use(addAuthHeader, handleResponseError);
+// ==================== 拦截器配置 ====================
 
-// 响应拦截器：返回 res.data
-axiosInstance.interceptors.response.use(async (res: AxiosResponse) => {
-  console.log(res);
+// 主实例：请求拦截器
+mainAxiosInstance.interceptors.request.use(addAuthHeader, handleResponseError);
+
+// 主实例：响应拦截器（处理 401、token 刷新和 blob 响应）
+mainAxiosInstance.interceptors.response.use(async (res: AxiosResponse) => {
+  // 对于 blob/arraybuffer，直接返回完整响应（用于文件下载）
+  if (
+    res.config.responseType === "blob" ||
+    res.config.responseType === "arraybuffer"
+  ) {
+    return res;
+  }
 
   // 检测业务码 401，表示 token 过期
   if (res.data.code === 401) {
@@ -80,7 +110,7 @@ axiosInstance.interceptors.response.use(async (res: AxiosResponse) => {
           // 更新请求头中的 token
           originalRequest.headers.Authorization = newToken;
           // 重试原始请求
-          resolve(axiosInstance(originalRequest));
+          resolve(mainAxiosInstance(originalRequest));
         });
       });
     }
@@ -89,10 +119,9 @@ axiosInstance.interceptors.response.use(async (res: AxiosResponse) => {
     isRefreshing = true;
 
     try {
-      // 调用 refresh 接口
-      const refreshResponse = await axios.post<ResType>(
-        `${BASE_URL}/user/auth/refresh`,
-      );
+      // 调用 refresh 接口（使用 refreshAxiosInstance，避免经过响应拦截器造成循环）
+      const refreshResponse =
+        await refreshAxiosInstance.post<ResType>(`/user/auth/refresh`);
 
       if (refreshResponse.data.code === 200) {
         const newToken = refreshResponse.data.data;
@@ -107,7 +136,7 @@ axiosInstance.interceptors.response.use(async (res: AxiosResponse) => {
         onTokenRefreshed(newToken);
 
         // 重试原始请求
-        return axiosInstance(originalRequest);
+        return mainAxiosInstance(originalRequest);
       } else {
         // refresh 失败，清除 token 并跳转登录
         useUserStore().clearToken();
@@ -126,19 +155,14 @@ axiosInstance.interceptors.response.use(async (res: AxiosResponse) => {
     }
   }
 
-  return res.data;
-}, handleResponseError);
-rawAxiosInstance.interceptors.response.use((res: AxiosResponse) => {
-  if (
-    res.config.responseType === "blob" ||
-    res.config.responseType === "arraybuffer"
-  )
-    return res;
-
+  // 其他情况返回 res.data
   return res.data;
 }, handleResponseError);
 
-// 定义统一返回 ResType 的客户端接口
+// Refresh 实例：不需要拦截器（避免循环调用）
+
+// ==================== 封装客户端 ====================
+
 interface RestClient {
   get(url: string, config?: AxiosRequestConfig): Promise<ResType>;
   post(
@@ -159,40 +183,29 @@ interface RestClient {
   delete(url: string, config?: AxiosRequestConfig): Promise<ResType>;
 }
 
-// 封装后的 apiClient，所有方法返回 Promise<ResType>
+/**
+ * 标准 API 客户端
+ * 使用场景：所有业务 API 调用（包括文件上传/下载）
+ * - 对于 blob 请求，返回完整的 AxiosResponse<Blob>（需要类型断言）
+ * - 对于其他请求，返回 Promise<ResType>
+ */
 export const apiClient: RestClient = {
   get(url, config) {
-    return axiosInstance.get(url, config) as Promise<ResType>;
+    return mainAxiosInstance.get(url, config) as Promise<ResType>;
   },
   post(url, data, config) {
-    return axiosInstance.post(url, data, config) as Promise<ResType>;
+    return mainAxiosInstance.post(url, data, config) as Promise<ResType>;
   },
   put(url, data, config) {
-    return axiosInstance.put(url, data, config) as Promise<ResType>;
+    return mainAxiosInstance.put(url, data, config) as Promise<ResType>;
   },
   patch(url, data, config) {
-    return axiosInstance.patch(url, data, config) as Promise<ResType>;
+    return mainAxiosInstance.patch(url, data, config) as Promise<ResType>;
   },
   delete(url, config) {
-    return axiosInstance.delete(url, config) as Promise<ResType>;
+    return mainAxiosInstance.delete(url, config) as Promise<ResType>;
   },
 };
 
-// 原始客户端（如果需要拿到完整 AxiosResponse，可以用这个）
-export const rawApiClient: RestClient = {
-  get(url, config) {
-    return rawAxiosInstance.get(url, config) as Promise<ResType>;
-  },
-  post(url, data, config) {
-    return rawAxiosInstance.post(url, data, config) as Promise<ResType>;
-  },
-  put(url, data, config) {
-    return rawAxiosInstance.put(url, data, config) as Promise<ResType>;
-  },
-  patch(url, data, config) {
-    return rawAxiosInstance.patch(url, data, config) as Promise<ResType>;
-  },
-  delete(url, config) {
-    return rawAxiosInstance.delete(url, config) as Promise<ResType>;
-  },
-};
+// 导出 mainAxiosInstance，用于需要完整 AxiosResponse 的场景（如文件下载）
+export { mainAxiosInstance };

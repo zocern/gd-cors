@@ -178,11 +178,13 @@ watch(
         </el-button>
       </div>
     </nav>
-    <router-view v-slot="{ Component }">
-      <transition name="fade" mode="out-in">
-        <component :is="Component" />
-      </transition>
-    </router-view>
+    <div class="router-view-wrapper">
+      <router-view v-slot="{ Component }">
+        <transition name="fade" mode="out-in">
+          <component :is="Component" />
+        </transition>
+      </router-view>
+    </div>
   </div>
 </template>
 
@@ -221,6 +223,15 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+// 让 router-view 占据剩余空间
+.router-view-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; // 重要：允许 flex 子元素收缩
+  overflow: hidden; // 防止内容溢出
 }
 
 .navbar {

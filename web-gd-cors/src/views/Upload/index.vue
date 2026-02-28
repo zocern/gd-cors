@@ -33,7 +33,7 @@
 import { ElMessage } from "element-plus";
 import { UploadFilled } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
-import { fileAPI } from "../services/file.ts";
+import { fileAPI } from "../../services/file.ts";
 
 const route = useRoute();
 const router = useRouter();
