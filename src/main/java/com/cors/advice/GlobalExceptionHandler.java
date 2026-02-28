@@ -2,11 +2,7 @@ package com.cors.advice;
 
 import com.cors.domain.ResponseResult;
 import com.cors.domain.ResultCode;
-import com.cors.exception.BadRequestException;
-import com.cors.exception.FileStorageException;
-import com.cors.exception.NotFoundException;
-import com.cors.exception.TokenInvalidException;
-import com.cors.exception.UnauthorizedException;
+import com.cors.exception.*;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -110,16 +106,18 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(FileStorageException.class)
     public ResponseResult<Object> handleFileStorageException(FileStorageException e) {
-        log.error("文件操作失败: {}", e.getMessage(), e);
+        log.warn("文件操作失败: {}", e.getMessage(), e);
         return ResponseResult.error(e.getCode(), e.getMessage());
     }
+
+
 
     /**
      * 处理所有其他未捕获的异常（500 服务器内部错误）
      */
     @ExceptionHandler(Exception.class)
     public ResponseResult<Object> handleException(Exception e) {
-        log.error("服务器内部错误: {}", e.getMessage(), e);
+        log.warn("服务器内部错误: {}", e.getMessage(), e);
         // 生产环境建议不返回详细的异常信息，仅返回通用错误信息
         String message = "服务器内部错误，请联系管理员";
         // 开发环境可以返回详细错误信息

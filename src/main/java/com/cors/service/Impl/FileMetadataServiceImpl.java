@@ -51,8 +51,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.*;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -268,14 +266,12 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
             // 使用 self 代理调用以确保事务生效
             self.saveFileRecordWithTransaction(parentId, id, originalFilename, fileSize, storageKey);
             saveSuccess = true;
-        } catch (Exception e) {
-            log.error("数据库记录保存失败，准备回滚 MinIO 文件: {}", storageKey, e);
-            throw new FileStorageException("文件保存失败", e);
         } finally {
             if (saveSuccess) {
                 // 发送向量化消息
                 fileVectorProducer.sendFileVectorMessage(new FileVectorMessage(storageKey));
             } else {
+                log.error("数据库记录保存失败，准备回滚 MinIO 文件: {}", storageKey);
                 fileStorageDeleteProducer.sendFileStorageDeleteMessage(new FileDeleteMessage(storageKey, 0));
             }
             hierarchicalLockHelper.unlockAll(lock);
@@ -364,15 +360,13 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
             // 更新字段：文件名、大小、StorageKey、更新时间等
             self.updateFileRecordWithTransaction(id, newOriginalFilename, newFileSize, newStorageKey);
             updateSuccess = true;
-        } catch (Exception e) {
-            log.error("文件更新数据库失败，准备回滚新上传的文件: {}", newStorageKey, e);
-            throw new FileStorageException("文件更新失败", e);
         } finally {
             if (updateSuccess) {
                 // 清理旧文件、旧向量 + 新向量化
                 handlePostUpdateSuccess(oldStorageKey, newStorageKey);
             } else {
                 // 清理刚才上传的新文件
+                log.error("文件更新数据库失败，准备回滚新上传的文件: {}", newStorageKey);
                 fileStorageDeleteProducer.sendFileStorageDeleteMessage(new FileDeleteMessage(newStorageKey, 0));
             }
             hierarchicalLockHelper.unlockAll(lock);

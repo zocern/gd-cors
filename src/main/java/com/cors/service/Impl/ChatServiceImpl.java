@@ -43,7 +43,7 @@ public class ChatServiceImpl implements ChatService {
     private final SessionService sessionService;
     private final MessageService messageService;
 
-    // TODO
+    // TODO 单会话互斥
     private final Map<Long, Semaphore> sessionLockMap = new ConcurrentHashMap<>();
 
     /**
@@ -92,8 +92,7 @@ public class ChatServiceImpl implements ChatService {
                     .build();
 
             messageService.save(chatMessageUser); // 入库
-            // messageProducer.sendChatMessage(chatMessageUser);
-            log.info("用户消息已保存，准备请求 AI...");
+            log.debug("用户消息已保存，准备请求 AI...");
 
             // 创建一个具有“重放”功能的 Sink
             // replay().all() 表示：无论何时有新客户端连进来，都把之前的历史记录全发给它
@@ -111,7 +110,7 @@ public class ChatServiceImpl implements ChatService {
                         String finalAnswer = contentBuilder.toString();
                         if (!finalAnswer.isBlank()) {
 
-                            log.info("AI 会话消息入库, 长度: [{}], 内容: [{}]", finalAnswer.length(), finalAnswer);
+                            log.debug("AI 会话消息入库, 长度: [{}], 内容: [{}]", finalAnswer.length(), finalAnswer);
                             ChatMessage chatMessageAi = ChatMessage.builder()
                                     .sessionId(sessionId)
                                     .senderType(SenderType.AI)
@@ -126,7 +125,7 @@ public class ChatServiceImpl implements ChatService {
                                 ctx.getStatus().compareAndSet(SAVING, SUCCESS);
                             }
                         } else {
-                            log.warn("会话 [{}] 生成内容为空，跳过入库", sessionId);
+                            log.debug("会话 [{}] 生成内容为空，跳过入库", sessionId);
                         }
                         // 通知前端结束 (让 UI 停止 Loading)
                         sink.tryEmitComplete();

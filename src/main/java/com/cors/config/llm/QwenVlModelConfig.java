@@ -16,4 +16,5 @@ public class QwenVlModelConfig {
     private boolean logRequests;
     private boolean logResponses;
     private Duration timeout;
+    private int maxRetries;
 }

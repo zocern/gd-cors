@@ -17,7 +17,7 @@ public class UserContextUtil {
      * 获取当前用户UserId
      * @return 用户ID
      */
-    public static Long getUserId() throws UnauthorizedException {
+    public static Long getUserId() {
         Long userId = threadLocal.get();
         if (userId == null) {
             throw new UnauthorizedException("未登录");

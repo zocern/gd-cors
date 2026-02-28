@@ -77,16 +77,18 @@ langchain4j:
       log-requests: ${LANGCHAIN4J_OLLAMA_VL_LOG_REQUESTS:true}
       log-responses: ${LANGCHAIN4J_OLLAMA_VL_LOG_RESPONSES:true}
       timeout: ${LANGCHAIN4J_OLLAMA_VL_TIMEOUT:120s}
+      max-retries: ${LANGCHAIN4J_OLLAMA_VL_MAX_RETRIES:3}
 
     qwen-embedding-model:
       base-url: ${LANGCHAIN4J_OLLAMA_EMBEDDING_BASE_URL:http://localhost:11434}
       model-name: ${LANGCHAIN4J_OLLAMA_EMBEDDING_MODEL_NAME:qwen3-embedding:8b}
       log-requests: ${LANGCHAIN4J_OLLAMA_EMBEDDING_LOG_REQUESTS:true}
-      log-responses: ${LANGCHAIN4J_OLLAMA_EMBEDDING_LOG_RESPONSES:true}
+      log-responses: ${LANGCHAIN4J_OLLAMA_EMBEDDING_LOG_RESPONSES:false}
       timeout: ${LANGCHAIN4J_OLLAMA_EMBEDDING_TIMEOUT:120s}
+      max-retries: ${LANGCHAIN4J_OLLAMA_EMBEDDING_MAX_RETRIES:3}
 
 
-#      max-segments-per-batch: ${LANGCHAIN4J_OLLAMA_EMBEDDING_MAX_SEGMENTS_PER_BATCH:10}
+  #      max-segments-per-batch: ${LANGCHAIN4J_OLLAMA_EMBEDDING_MAX_SEGMENTS_PER_BATCH:10}
 #      dimensions: ${LANGCHAIN4J_OLLAMA_EMBEDDING_DIMENSION:4096}
 
   #    vlm-model:

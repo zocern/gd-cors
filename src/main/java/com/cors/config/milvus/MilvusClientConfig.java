@@ -11,7 +11,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 
 @Configuration
@@ -88,15 +90,20 @@ public class MilvusClientConfig {
                     .build();
 
             // 针对 metadata 字段构建倒排索引
-            IndexParam indexParamForMetadataField = IndexParam.builder()
-                    .fieldName("metadata")                    // 指定 JSON 字段名
-                    .indexType(IndexParam.IndexType.INVERTED) // 使用倒排索引 (Inverted Index)
+            Map<String, Object> extraParams = new HashMap<>();
+            extraParams.put("json_path", "metadata[\"storage_key\"]");
+            extraParams.put("json_cast_type", "varchar");
+            IndexParam indexParamForMetadataStorageKeyField = IndexParam.builder()
+                    .fieldName("metadata")
+                    .indexName("storage_key_index")
+                    .indexType(IndexParam.IndexType.INVERTED)
+                    .extraParams(extraParams)
                     .build();
 
             List<IndexParam> indexParams = new ArrayList<>();
             indexParams.add(indexParamForIdField);
             indexParams.add(indexParamForVectorField);
-            indexParams.add(indexParamForMetadataField);
+            indexParams.add(indexParamForMetadataStorageKeyField);
 
             // Create a collection with schema and index parameters
             CreateCollectionReq createCollectionReq = CreateCollectionReq.builder()

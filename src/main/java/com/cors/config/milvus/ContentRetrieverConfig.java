@@ -17,7 +17,7 @@ public class ContentRetrieverConfig {
         return EmbeddingStoreContentRetriever.builder()
                 .embeddingStore(milvusEmbeddingStore) // 使用注入的 Milvus 向量存储
                 .embeddingModel(embeddingModel)       // 使用注入的向量模型
-                .maxResults(5)                        // 指定最多返回5个最相关的结果
+                .maxResults(20)                       // 指定最多返回 20 个最相关的结果
                 .minScore(0.8)                        // 指定相关性分数的最小阈值，过滤掉不相关的结果
                 .build();
     }

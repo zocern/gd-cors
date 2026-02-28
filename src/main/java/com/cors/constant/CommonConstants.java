@@ -4,7 +4,8 @@ import java.util.Set;
 
 public final class CommonConstants {
 
-    private CommonConstants() {}
+    private CommonConstants() {
+    }
 
     public static final String METADATA_STORAGE_KEY = "storage_key";
     public static final String METADATA_BATCH_ID = "batchId";
@@ -47,7 +48,7 @@ public final class CommonConstants {
             "image/gif",                     // 动图在某些 VLM 中只能看到第一帧
             "image/vnd.adobe.photoshop",     // .psd (Tika 能测出，但 VLM 打不开)
             "image/tiff",                    // .tiff (某些 API 不支持)
-
+            "image/png", "image/jpeg", "image/bmp",
             // --- 4. 字体与加密文件 ---
             "application/x-font-ttf",
             "application/x-font-woff",

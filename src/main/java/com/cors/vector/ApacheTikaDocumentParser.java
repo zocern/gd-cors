@@ -1,19 +1,20 @@
-package com.cors.config.milvus.parser;
+package com.cors.vector;
 
 
-import dev.langchain4j.data.document.BlankDocumentException;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentParser;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.ollama.OllamaChatModel;
+import dev.langchain4j.store.embedding.EmbeddingStore;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.apache.tika.exception.TikaException;
-import org.apache.tika.exception.ZeroByteFileException;
 import org.apache.tika.extractor.EmbeddedDocumentExtractor;
 import org.apache.tika.io.TikaInputStream;
 import org.apache.tika.metadata.Metadata;
@@ -23,15 +24,14 @@ import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
 import org.apache.tika.parser.pdf.PDFParserConfig;
 import org.apache.tika.sax.BodyContentHandler;
-import org.springframework.stereotype.Component;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.function.Supplier;
 
 import static com.cors.constant.CommonConstants.BLACKLISTED_TYPES;
@@ -44,7 +44,6 @@ import static dev.langchain4j.internal.Utils.isNullOrBlank;
  * @author zocern
  */
 @Slf4j
-@Component
 public class ApacheTikaDocumentParser implements DocumentParser {
 
     private static final int NO_WRITE_LIMIT = -1;
@@ -57,109 +56,91 @@ public class ApacheTikaDocumentParser implements DocumentParser {
     public static final Supplier<Parser> DEFAULT_PARSER_SUPPLIER = AutoDetectParser::new;
     public static final Supplier<Metadata> DEFAULT_METADATA_SUPPLIER = Metadata::new;
     public static final Supplier<ParseContext> DEFAULT_PARSE_CONTEXT_SUPPLIER = ParseContext::new;
-    public static final Supplier<ContentHandler> DEFAULT_CONTENT_HANDLER_SUPPLIER = () -> new BodyContentHandler(NO_WRITE_LIMIT);
+    // public static final Supplier<ContentHandler> DEFAULT_CONTENT_HANDLER_SUPPLIER = () -> new BodyContentHandler(NO_WRITE_LIMIT);
 
     private final Supplier<Parser> parserSupplier;
-    private final Supplier<ContentHandler> contentHandlerSupplier;
     private final Supplier<Metadata> metadataSupplier;
     private final Supplier<ParseContext> parseContextSupplier;
-    private final boolean includeMetadata;
 
+    private final ExecutorService executor;
     private final OllamaChatModel ollamaChatModel;
+    private final EmbeddingModel embeddingModel;
+    private final EmbeddingStore<TextSegment> milvusEmbeddingStore;
 
-    public ApacheTikaDocumentParser(OllamaChatModel ollamaChatModel) {
-        this(ollamaChatModel, false);
-    }
-
-    public ApacheTikaDocumentParser(OllamaChatModel ollamaChatModel, boolean includeMetadata) {
-        this(ollamaChatModel, null, null, null, null, includeMetadata);
+    public ApacheTikaDocumentParser(ExecutorService executor, OllamaChatModel ollamaChatModel, EmbeddingModel embeddingModel,
+                                    EmbeddingStore<TextSegment> milvusEmbeddingStore) {
+        this(executor, ollamaChatModel, embeddingModel, milvusEmbeddingStore, null, null, null);
     }
 
     public ApacheTikaDocumentParser(
+            ExecutorService executor,
             OllamaChatModel ollamaChatModel,
+            EmbeddingModel embeddingModel,
+            EmbeddingStore<TextSegment> milvusEmbeddingStore,
             Supplier<Parser> parserSupplier,
-            Supplier<ContentHandler> contentHandlerSupplier,
             Supplier<Metadata> metadataSupplier,
-            Supplier<ParseContext> parseContextSupplier,
-            boolean includeMetadata) {
-        this.ollamaChatModel = ollamaChatModel; // 注入模型
+            Supplier<ParseContext> parseContextSupplier
+    ) {
+        this.executor = executor;
+        this.ollamaChatModel = ollamaChatModel;
+        this.embeddingModel = embeddingModel;
+        this.milvusEmbeddingStore = milvusEmbeddingStore;
         this.parserSupplier = getOrDefault(parserSupplier, () -> DEFAULT_PARSER_SUPPLIER);
-        this.contentHandlerSupplier = getOrDefault(contentHandlerSupplier, () -> DEFAULT_CONTENT_HANDLER_SUPPLIER);
         this.metadataSupplier = getOrDefault(metadataSupplier, () -> DEFAULT_METADATA_SUPPLIER);
         this.parseContextSupplier = getOrDefault(parseContextSupplier, () -> DEFAULT_PARSE_CONTEXT_SUPPLIER);
-        this.includeMetadata = includeMetadata;
     }
 
     @Override
     public Document parse(InputStream inputStream) {
-        // 使用 TikaInputStream 包装原始流，这是处理类型检测和复用流的关键
-        // TikaInputStream 支持 mark/reset，防止 detector 读取后流无法再次使用
+        return null;
+    }
+
+    public Document parse(InputStream inputStream, Map<String, String> globalMetadata, List<Future<?>> futures) {
         try (TikaInputStream tis = TikaInputStream.get(inputStream)) {
             Metadata metadata = metadataSupplier.get();
 
-            // 使用 Tika 核心工具检测 MIME 类型
             String mediaType = TIKA_INSTANCE.detect(tis);
-            if (mediaType != null) {
-                metadata.set(Metadata.CONTENT_TYPE, mediaType);
-            }
-            log.debug("Detected Media Type: {}", mediaType);
+            if (mediaType != null) metadata.set(Metadata.CONTENT_TYPE, mediaType);
 
             if (mediaType == null || BLACKLISTED_TYPES.contains(mediaType)) {
-                log.debug("拦截不支持的文件类型: {}", mediaType);
                 throw new IllegalArgumentException("Unsupported file type: " + mediaType);
             }
 
-            // 分流策略：如果是图片，直接走 VLM 逻辑；如果是文档，走 Tika Parser
-            if (mediaType.startsWith("image/")) {
-                return parseStandaloneImage(tis, mediaType, metadata);
-            } else {
-                return parseDocument(tis, mediaType, metadata);
-            }
-        } catch (BlankDocumentException e) {
-            log.debug("Blank document detected: {}", e.getMessage());
-            throw e;
+            parseDocumentStreamingWithEmbedding(
+                    tis,
+                    futures,
+                    embeddingModel,
+                    milvusEmbeddingStore,
+                    metadata,
+                    globalMetadata
+            );
+
         } catch (Exception e) {
-            log.error("Document parsing failed", e);
             throw new RuntimeException("Document parsing failed", e);
         }
+
+        return Document.from("Document parsed and ingested into vector store");
     }
 
     /**
-     * 策略 A: 处理独立图片文件 (如 PNG, JPG)
-     * 直接读取流并调用 VLM，不经过 Tika Parser，解决 Tika ImageParser 无文字产出的问题
-     */
-    private Document parseStandaloneImage(InputStream stream, String mediaType, Metadata metadata) throws IOException {
-        log.debug("Processing standalone image file: {}", mediaType);
-
-        byte[] imageBytes = readBytesWithLimit(stream);
-
-        String resourceName = getOrDefault(TikaCoreProperties.RESOURCE_NAME_KEY, "embedded-resource");
-
-        // 调用公共逻辑生成描述
-        String description = processImageAndFormat(imageBytes, mediaType, resourceName);
-
-        // 兜底：如果 VLM 返回空或图片被跳过，给一个占位符，避免 BlankDocumentException
-        if (isNullOrBlank(description)) {
-            log.debug("VLM returned empty for standalone image.");
-            throw new BlankDocumentException();
-        }
-
-        return includeMetadata ? Document.from(description, convert(metadata)) : Document.from(description);
-    }
-
-    /**
-     * 策略 B: 处理常规文档 (PDF, Word 等)
      * 使用 Tika Parser 解析文本，并挂载 EmbeddedDocumentExtractor 拦截内部图片
      */
-    private Document parseDocument(InputStream stream, String mediaType, Metadata metadata) throws IOException, TikaException, SAXException {
+    private void parseDocumentStreamingWithEmbedding(InputStream stream,
+                                                     List<Future<?>> futures,
+                                                     EmbeddingModel embeddingModel,
+                                                     EmbeddingStore<TextSegment> milvusEmbeddingStore,
+                                                     Metadata metadata,
+                                                     Map<String, String> globalMetadata)
+            throws IOException, TikaException, SAXException {
+
         Parser parser = parserSupplier.get();
-        ContentHandler contentHandler = contentHandlerSupplier.get();
         ParseContext parseContext = parseContextSupplier.get();
 
         // PDF 配置
         PDFParserConfig pdfConfig = new PDFParserConfig();
+        pdfConfig.setEnableAutoSpace(true);
         pdfConfig.setExtractInlineImages(true);
-        pdfConfig.setOcrStrategy(PDFParserConfig.OCR_STRATEGY.NO_OCR); // 显式关闭 OCR，依靠 VLM
+        pdfConfig.setOcrStrategy(PDFParserConfig.OCR_STRATEGY.NO_OCR);
         pdfConfig.setSortByPosition(true);
         parseContext.set(PDFParserConfig.class, pdfConfig);
 
@@ -171,52 +152,44 @@ public class ApacheTikaDocumentParser implements DocumentParser {
             }
 
             @Override
-            public void parseEmbedded(InputStream embeddedStream, ContentHandler handler, Metadata m, boolean outputHtml)
+            public void parseEmbedded(InputStream embeddedStream, ContentHandler handler, Metadata m, boolean outputHtml) // m 嵌入对象的元信息
                     throws SAXException, IOException {
 
                 String contentType = m.get(Metadata.CONTENT_TYPE);
                 String resourceName = getOrDefault(TikaCoreProperties.RESOURCE_NAME_KEY, "embedded-resource");
 
-                // 忽略图片处理
-                Parser embeddedParser = parserSupplier.get();
-                try {
-                    embeddedParser.parse(embeddedStream, handler, m, parseContext);
-                } catch (TikaException e) {
-                    log.debug("Failed to parse embedded document: {}", e.getMessage());
-                }
-
                 // 拦截图片资源
-//                if (contentType != null && contentType.startsWith("image/")) {
-//                    log.debug("Detected embedded image: Type={}, Name={}", contentType, resourceName);
-//
-//                    byte[] imageBytes = readBytesWithLimit(embeddedStream);
-//                    // 复用公共逻辑
-//                    String formattedOutput = processImageAndFormat(imageBytes, contentType, resourceName);
-//
-//                    if (!isNullOrBlank(formattedOutput)) {
-//                        handler.characters(formattedOutput.toCharArray(), 0, formattedOutput.length());
-//                    }
-//                } else {
-//                    // 非图片资源递归解析
-//                    Parser embeddedParser = parserSupplier.get();
-//                    try {
-//                        embeddedParser.parse(embeddedStream, handler, m, parseContext);
-//                    } catch (TikaException e) {
-//                        log.debug("Failed to parse embedded document: {}", e.getMessage());
-//                    }
-//                }
+                if (contentType != null && contentType.startsWith("image/")) {
+                    log.debug("Detected embedded image: Type={}, Name={}", contentType, resourceName);
+
+                    byte[] imageBytes = readBytesWithLimit(embeddedStream);
+                    // 复用公共逻辑
+                    String formattedOutput = processImageAndFormat(imageBytes, contentType, resourceName);
+
+                    if (!isNullOrBlank(formattedOutput)) {
+                        handler.characters(formattedOutput.toCharArray(), 0, formattedOutput.length());
+                    }
+                }
             }
         });
 
-        // 执行 Tika 解析
-        parser.parse(stream, contentHandler, metadata, parseContext);
 
-        String text = contentHandler.toString();
-        if (isNullOrBlank(text)) {
-            log.debug("Parsed document is blank. MediaType: {}", mediaType);
-            throw new BlankDocumentException();
-        }
-        return includeMetadata ? Document.from(text, convert(metadata)) : Document.from(text);
+        // 每次消费一个文件就创建新的 handler 信号量独立
+        ParallelStreamingContentHandler streamingHandler = new ParallelStreamingContentHandler(
+                executor,
+                futures,
+                embeddingModel,
+                milvusEmbeddingStore,
+                globalMetadata,
+                convert(metadata),
+                4,
+                10000,
+                10,
+                500,
+                100
+        );
+
+        parser.parse(stream, streamingHandler, metadata, parseContext);
     }
 
     /**

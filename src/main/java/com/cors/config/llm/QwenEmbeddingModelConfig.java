@@ -17,4 +17,5 @@ public class QwenEmbeddingModelConfig {
 //    private int maxSegmentsPerBatch;
 //    private int dimensions;
     private Duration timeout;
+    private int maxRetries;
 }

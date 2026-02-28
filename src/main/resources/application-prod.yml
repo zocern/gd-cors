@@ -1,0 +1,24 @@
+gd-cors:
+  # ============================================
+  # LangChain4j 配置
+  # ============================================
+  langchain4j:
+    open-ai:
+      model:
+         zhipu-api-key: ${LANGCHAIN4J_OPENAI_ONLINE_MODEL_ZHIPU_API_KEY:94a0401159d04af5a96028d2377db403.6EZJa5wof0DpMvkT}
+         # qwen-api-key: ${LANGCHAIN4J_OPENAI_ONLINE_MODEL_ZHIPU_API_KEY:sk-012654a21e4d447eb70451e5c898c04a}
+    web-search-engine:
+      tavily:
+        api-key: ${LANGCHAIN4J_TAVILY_API_KEY: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} # 从环境变量读取API Key
+
+
+
+
+
+
+
+
+
+
+
+

@@ -10,7 +10,8 @@ public enum FileVectorStatusType {
     PENDING("PENDING"),
     PROCESSING("PROCESSING"),
     SUCCESS("SUCCESS"),
-    FAILED("FAILED");
+    FAILED("FAILED"),
+    UNSUPPORTED("UNSUPPORTED");
 
     @EnumValue // MyBatis-Plus 保存数据库的值
     @JsonValue  // 返回给前端时使用这个值

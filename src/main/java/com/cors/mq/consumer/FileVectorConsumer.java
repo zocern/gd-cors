@@ -57,9 +57,10 @@ public class FileVectorConsumer {
                 return;
             }
 
-            log.info("开始处理向量化任务，storageKey={}", storageKey);
+            log.debug("开始处理向量化任务，storageKey={}", storageKey);
 
             // 执行业务逻辑 (上传/向量化)
+            // documentVector.processUploadDoc(storageKey);
             documentVector.processUploadDoc(storageKey);
 
             // 标记成功状态
@@ -71,7 +72,7 @@ public class FileVectorConsumer {
         } catch (BlankDocumentException | IllegalArgumentException e) {
             Throwable rootCause = NestedExceptionUtils.getMostSpecificCause(e);
             log.error("文件向量化拦截: {}", storageKey, e);
-            updateStatus(storageKey, FileVectorStatusType.FAILED, rootCause.getMessage());
+            updateStatus(storageKey, FileVectorStatusType.UNSUPPORTED, rootCause.getMessage());
             try {
                 channel.basicAck(tag, false);
             } catch (IOException ex) {

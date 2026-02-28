@@ -1,12 +1,15 @@
 package com.cors.config.llm;
 
-import com.cors.config.milvus.parser.ApacheTikaDocumentParser;
+import com.cors.vector.ApacheTikaDocumentParser;
+import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.http.client.spring.restclient.SpringRestClient;
+import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.ollama.OllamaChatModel;
 import dev.langchain4j.model.ollama.OllamaChatRequestParameters;
 import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 import dev.langchain4j.model.ollama.OllamaStreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import dev.langchain4j.store.embedding.EmbeddingStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
@@ -14,6 +17,7 @@ import org.springframework.context.annotation.Configuration;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 
 @Configuration
 @RequiredArgsConstructor
@@ -23,7 +27,6 @@ public class LlmConfig {
     private final QwenChatModelConfig qwenChatModelConfig;
     private final QwenVlModelConfig qwenVlModelConfig;
     private final QwenEmbeddingModelConfig qwenEmbeddingModelConfig;
-
 
     @Bean("onlineChatModel")
     public OpenAiStreamingChatModel onlineChatModel() {
@@ -67,6 +70,7 @@ public class LlmConfig {
                 .logRequests(qwenVlModelConfig.isLogRequests())
                 .logResponses(qwenVlModelConfig.isLogResponses())
                 .timeout(qwenVlModelConfig.getTimeout())
+                .maxRetries(qwenVlModelConfig.getMaxRetries())
                 .httpClientBuilder(SpringRestClient.builder()
                         .readTimeout(qwenVlModelConfig.getTimeout()))
                 .customHeaders(map)
@@ -90,13 +94,17 @@ public class LlmConfig {
                 .logRequests(qwenEmbeddingModelConfig.isLogRequests())
                 .logResponses(qwenEmbeddingModelConfig.isLogResponses())
                 .timeout(qwenEmbeddingModelConfig.getTimeout())
+                .maxRetries(qwenEmbeddingModelConfig.getMaxRetries())
                 .httpClientBuilder(SpringRestClient.builder())
                 .customHeaders(map)
                 .build();
-     }
+    }
 
     @Bean
-    public ApacheTikaDocumentParser apacheTikaDocumentParser(@Qualifier("qwenVlModel") OllamaChatModel ollamaChatModel) {
-        return new ApacheTikaDocumentParser(ollamaChatModel, true);
+    public ApacheTikaDocumentParser apacheTikaDocumentStreamParser(@Qualifier("vectorIngestExecutor") ExecutorService executor,
+                                                                   @Qualifier("qwenVlModel") OllamaChatModel ollamaChatModel,
+                                                                   EmbeddingModel embeddingModel,
+                                                                   EmbeddingStore<TextSegment> milvusEmbeddingStore) {
+        return new ApacheTikaDocumentParser(executor, ollamaChatModel, embeddingModel, milvusEmbeddingStore);
     }
 }
