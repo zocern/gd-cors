@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS `file_association`
 
 CREATE TABLE file_vector_status (
                                     storage_key VARCHAR(255) PRIMARY KEY,
-                                    status ENUM('PROCESSING','SUCCESS','FAILED') NOT NULL,
+                                    status ENUM('PROCESSING','SUCCESS','FAILED','UNSUPPORTED') NOT NULL,
                                     updated TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                                     created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                                     retry_count INT DEFAULT 0,

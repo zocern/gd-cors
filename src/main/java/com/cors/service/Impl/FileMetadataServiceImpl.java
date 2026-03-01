@@ -840,6 +840,35 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
         }
     }
 
+    @Transactional
+    public void moveWithTransactional(Long id, Long newParentId, FileMetadata fileMetadata) {
+        Long userId = UserContextUtil.getUserId();
+        String newParentName = null;
+        if (newParentId != null) {
+            FileMetadata newParentFileMetadata = this.getById(newParentId);
+            if (newParentFileMetadata == null) {
+                throw new NotFoundException(String.format("目标父文件夹不存在, ID: %s", newParentId));
+            }
+            if (!Boolean.TRUE.equals(newParentFileMetadata.getFolder())) {
+                throw new BadRequestException(String.format("目标不是一个文件夹, ID: %s", newParentId));
+            }
+            if (isAncestor(id, newParentId)) {
+                throw new BadRequestException("不能将文件夹移动到其子文件夹中");
+            }
+            checkDuplicateName(newParentId, fileMetadata.getName(), id);
+            newParentName = newParentFileMetadata.getName();
+        } else {
+            checkDuplicateName(null, fileMetadata.getName(), id);
+        }
+
+        fileMetadata.setParentId(newParentId);
+        fileMetadata.setParentName(newParentName);
+        fileMetadata.setUpdatedBy(userId);
+        if (!this.updateById(fileMetadata)) {
+            throw new FileStorageException(String.format("移动文件失败, ID: %s", id));
+        }
+    }
+
     @Override
     public PageDTO<FileMetadataVo> getFileByPage(String keyword, Integer pageNum, Integer pageSize) {
 
@@ -879,35 +908,6 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
         return pageDTO;
     }
 
-    @Transactional
-    public void moveWithTransactional(Long id, Long newParentId, FileMetadata fileMetadata) {
-        Long userId = UserContextUtil.getUserId();
-        String newParentName = null;
-        if (newParentId != null) {
-            FileMetadata newParentFileMetadata = this.getById(newParentId);
-            if (newParentFileMetadata == null) {
-                throw new NotFoundException(String.format("目标父文件夹不存在, ID: %s", newParentId));
-            }
-            if (!Boolean.TRUE.equals(newParentFileMetadata.getFolder())) {
-                throw new BadRequestException(String.format("目标不是一个文件夹, ID: %s", newParentId));
-            }
-            if (isAncestor(id, newParentId)) {
-                throw new BadRequestException("不能将文件夹移动到其子文件夹中");
-            }
-            checkDuplicateName(newParentId, fileMetadata.getName(), id);
-            newParentName = newParentFileMetadata.getName();
-        } else {
-            checkDuplicateName(null, fileMetadata.getName(), id);
-        }
-
-        fileMetadata.setParentId(newParentId);
-        fileMetadata.setParentName(newParentName);
-        fileMetadata.setUpdatedBy(userId);
-        if (!this.updateById(fileMetadata)) {
-            throw new FileStorageException(String.format("移动文件失败, ID: %s", id));
-        }
-    }
-
     @Override
     public void fileVectorRetry(String storageKey) {
 
@@ -938,14 +938,6 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
         validateFileName(file.getOriginalFilename());
     }
 
-//    private String generateStorageKey(String originalFilename) {
-//        String uuid = UUID.randomUUID().toString().replace("-", "");
-//        String extension = StringUtils.getFilenameExtension(originalFilename);
-//        String objectName = StringUtils.hasText(extension) ? uuid + "." + extension : uuid;
-//        String monthFolder = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM"));
-//        return monthFolder + "/" + objectName;
-//    }
-
     private void uploadToStorage(MultipartFile file, String storageKey) {
         try {
             ObjectWriteResponse response = minIoUtil.uploadFile(file, storageKey, file.getContentType());
@@ -955,7 +947,6 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
             throw new FileStorageException("文件存储服务异常", e);
         }
     }
-
 
     /**
      * 事务成功后的后置处理：清理旧资源 + 触发新流程

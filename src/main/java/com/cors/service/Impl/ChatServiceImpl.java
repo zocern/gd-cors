@@ -102,7 +102,7 @@ public class ChatServiceImpl implements ChatService {
                     .sink(sink)
                     .build();
 
-            // 保存会话的线程
+            // 保存会话的任务
             Runnable saveOnce = () -> {
                 // (CAS) 保证入库只执行一次
                 if (context.getStatus().compareAndSet(NONE, SAVING)) {

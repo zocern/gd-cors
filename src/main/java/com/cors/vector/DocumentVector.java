@@ -11,10 +11,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 
 import static com.cors.constant.CommonConstants.METADATA_BATCH_ID;
@@ -49,7 +47,7 @@ public class DocumentVector {
                 METADATA_BATCH_ID, batchId
         );
 
-        List<Future<?>> futures = new ArrayList<>();
+        List<CompletableFuture<?>> futures = Collections.synchronizedList(new ArrayList<>());
 
         try (InputStream is = minIoUtil.getObject(storageKey)) {
             log.debug("开始处理文件向量化: {}", storageKey);
@@ -58,14 +56,21 @@ public class DocumentVector {
             Document document = tikaParser.parse(is, globalMetadata, futures);
             log.debug(document.toString());
 
-            // 等待异步 batch 完成
-            for (Future<?> f : futures) {
-                f.get();
+            if (!futures.isEmpty()) {
+                // 只要其中任何一个任务抛出异常，join() 就会抛出 CompletionException
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
             }
 
             log.debug("向量化入库成功: {}", storageKey);
         } catch (Exception e) {
+
+            // 取消所有尚未完成的任务
+            futures.forEach(f -> {
+                if (f != null && !f.isDone()) f.cancel(true);
+            });
+
             processDeleteDoc(storageKey, batchId); // 出错回滚
+
             throw new RuntimeException(e);
         }
     }
@@ -75,17 +80,17 @@ public class DocumentVector {
      * 核心逻辑：根据 storage_key 删除 Milvus 中的数据
      */
     public void processDeleteDoc(String storageKey, @Nullable String batchId) {
-        log.debug("开始删除向量数据: {} - batchId={}", storageKey, batchId);
-
-        Filter filter = MetadataFilterBuilder.metadataKey(METADATA_STORAGE_KEY).isEqualTo(storageKey);
-
-        if (batchId != null && !batchId.isEmpty()) {
-            filter = filter.and(MetadataFilterBuilder.metadataKey(METADATA_BATCH_ID).isEqualTo(batchId));
+        try {
+            Filter filter = MetadataFilterBuilder.metadataKey(METADATA_STORAGE_KEY).isEqualTo(storageKey);
+            if (batchId != null && !batchId.isEmpty()) {
+                filter = filter.and(MetadataFilterBuilder.metadataKey(METADATA_BATCH_ID).isEqualTo(batchId));
+            }
+            log.debug("开始删除向量数据: {} - batchId={}", storageKey, batchId);
+            milvusEmbeddingStore.removeAll(filter);
+            log.debug("向量数据删除完成: {} - batchId={}", storageKey, batchId);
+        } catch (Exception e) {
+            log.error("向量数据物理删除失败 StorageKey: {}, BatchId: {}", storageKey, batchId, e);
         }
-
-        milvusEmbeddingStore.removeAll(filter);
-
-        log.debug("向量数据删除完成: {} - batchId={}", storageKey, batchId);
     }
 
     /**

@@ -30,6 +30,7 @@ import org.xml.sax.SAXException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.function.Supplier;
@@ -95,7 +96,7 @@ public class ApacheTikaDocumentParser implements DocumentParser {
         return null;
     }
 
-    public Document parse(InputStream inputStream, Map<String, String> globalMetadata, List<Future<?>> futures) {
+    public Document parse(InputStream inputStream, Map<String, String> globalMetadata, List<CompletableFuture<?>> futures) {
         try (TikaInputStream tis = TikaInputStream.get(inputStream)) {
             Metadata metadata = metadataSupplier.get();
 
@@ -126,7 +127,7 @@ public class ApacheTikaDocumentParser implements DocumentParser {
      * 使用 Tika Parser 解析文本，并挂载 EmbeddedDocumentExtractor 拦截内部图片
      */
     private void parseDocumentStreamingWithEmbedding(InputStream stream,
-                                                     List<Future<?>> futures,
+                                                     List<CompletableFuture<?>> futures,
                                                      EmbeddingModel embeddingModel,
                                                      EmbeddingStore<TextSegment> milvusEmbeddingStore,
                                                      Metadata metadata,
@@ -173,7 +174,7 @@ public class ApacheTikaDocumentParser implements DocumentParser {
             }
         });
 
-
+        // 流式字符串处理
         // 每次消费一个文件就创建新的 handler 信号量独立
         ParallelStreamingContentHandler streamingHandler = new ParallelStreamingContentHandler(
                 executor,

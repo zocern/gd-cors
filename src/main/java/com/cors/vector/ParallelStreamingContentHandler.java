@@ -14,9 +14,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.Future;
 
 @Slf4j
 public class ParallelStreamingContentHandler extends DefaultHandler {
@@ -26,7 +26,7 @@ public class ParallelStreamingContentHandler extends DefaultHandler {
     private final int flushThreshold;
     private final int batchIngestSize;
     private final ExecutorService executor;
-    private final List<Future<?>> futures;
+    private final List<CompletableFuture<?>> futures;
     private final Semaphore semaphore;
     private final EmbeddingStoreIngestor ingestor;
     private final DocumentSplitter documentSplitter;
@@ -34,7 +34,7 @@ public class ParallelStreamingContentHandler extends DefaultHandler {
     private final dev.langchain4j.data.document.Metadata documentMetadata;
 
     public ParallelStreamingContentHandler(ExecutorService executor,
-                                           List<Future<?>> futures,
+                                           List<CompletableFuture<?>> futures,
                                            EmbeddingModel embeddingModel,
                                            EmbeddingStore<TextSegment> milvusEmbeddingStore,
                                            Map<String, String> globalMetadata,
@@ -44,6 +44,11 @@ public class ParallelStreamingContentHandler extends DefaultHandler {
                                            int batchIngestSize,
                                            int maxSegmentSizeInChars,
                                            int maxOverlapSizeInChars) {
+
+        if (maxSegmentSizeInChars > flushThreshold) {
+            throw new IllegalArgumentException("maxSegmentSizeInChars must be less than or equal to flushThreshold");
+        }
+
         this.executor = executor;
         this.futures = futures;
         this.semaphore = new Semaphore(maxConcurrentBatches);
@@ -138,15 +143,18 @@ public class ParallelStreamingContentHandler extends DefaultHandler {
             return;
         }
 
-        futures.add(executor.submit(() -> {
+        // 使用 runAsync 并指定自定义线程池
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
             try {
                 ingestor.ingest(batchToSubmit);
             } catch (Exception e) {
-                log.error("Embedding ingest failed, thread={}", Thread.currentThread().getName(), e);
+                log.debug("Embedding ingest failed, thread={}", Thread.currentThread().getName(), e);
                 throw e;
             } finally {
                 semaphore.release();
             }
-        }));
+        }, executor);
+
+        futures.add(future);
     }
 }
