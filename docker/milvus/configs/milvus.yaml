@@ -1254,9 +1254,15 @@ trace:
 #if initMemSize and MaxMemSize both set zero,
 #milvus will automatically initialize half of the available GPU memory,
 #maxMemSize will the whole available GPU memory.
+#gpu:
+#  initMemSize: 2048 # Gpu Memory Pool init size
+#  maxMemSize: 4096 # Gpu Memory Pool Max size
+#  overloadedMemoryThresholdPercentage: 95
+
+# RTX NVIDIA 3090
 gpu:
-  initMemSize: 2048 # Gpu Memory Pool init size
-  maxMemSize: 4096 # Gpu Memory Pool Max size
+  initMemSize: 8192 # Gpu Memory Pool init size
+  maxMemSize: 20480 # Gpu Memory Pool Max size
   overloadedMemoryThresholdPercentage: 95
 
 # Any configuration related to the streaming node server.
