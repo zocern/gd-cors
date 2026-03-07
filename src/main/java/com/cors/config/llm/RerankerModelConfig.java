@@ -8,12 +8,7 @@ import java.time.Duration;
 
 @Data
 @Configuration
-@ConfigurationProperties(prefix = "langchain4j.open-ai.online-chat-model")
-public class HuggingFaceModelConfig {
+@ConfigurationProperties(prefix = "langchain4j.huggingface.reranker")
+public class RerankerModelConfig {
     private String baseUrl;
-    private String apiKey;
-    private String modelName;
-    private boolean logRequests;
-    private boolean logResponses;
-    private Duration timeout;
 }

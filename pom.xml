@@ -173,7 +173,7 @@
 		<dependency>
 			<groupId>dev.langchain4j</groupId>
 			<artifactId>langchain4j-ollama</artifactId>
-			<version>${langchain4j.version}</version> <!-- 或你项目中使用的版本 -->
+			<version>${langchain4j.version}</version>
 		</dependency>
 
 		<dependency>

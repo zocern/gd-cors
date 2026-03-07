@@ -1,6 +1,7 @@
 package com.cors.config.llm;
 
 import com.cors.vector.ApacheTikaDocumentParser;
+import com.cors.vector.TeiCustomScoringModel;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.http.client.spring.restclient.SpringRestClient;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -9,9 +10,11 @@ import dev.langchain4j.model.ollama.OllamaChatRequestParameters;
 import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 import dev.langchain4j.model.ollama.OllamaStreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import dev.langchain4j.model.scoring.ScoringModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -27,6 +30,7 @@ public class LlmConfig {
     private final QwenChatModelConfig qwenChatModelConfig;
     private final QwenVlModelConfig qwenVlModelConfig;
     private final QwenEmbeddingModelConfig qwenEmbeddingModelConfig;
+    private final RerankerModelConfig rerankerModelConfig;
 
     @Bean("onlineChatModel")
     public OpenAiStreamingChatModel onlineChatModel() {
@@ -98,6 +102,11 @@ public class LlmConfig {
                 .httpClientBuilder(SpringRestClient.builder())
                 .customHeaders(map)
                 .build();
+    }
+
+    @Bean("teiCustomScoringModel")
+    public ScoringModel teiCustomScoringModel() {
+        return new TeiCustomScoringModel(rerankerModelConfig.getBaseUrl());
     }
 
     @Bean

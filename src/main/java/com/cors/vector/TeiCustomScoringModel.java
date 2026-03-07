@@ -1,4 +1,4 @@
-package com.cors.config.llm;
+package com.cors.vector;
 
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.scoring.ScoringModel;

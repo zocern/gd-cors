@@ -6,6 +6,7 @@ import com.cors.tool.FileMetadataSearchTool;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.model.ollama.OllamaStreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.service.AiServices;
 import lombok.RequiredArgsConstructor;
@@ -24,13 +25,13 @@ public class AssistantConfig {
     public LocalAssistant localAssistant(
             @Qualifier("qwenChatModel") OllamaStreamingChatModel ollamaStreamingChatModel,
             ChatMemoryProvider chatMemoryProvider,
-            ContentRetriever contentRetriever,
+            RetrievalAugmentor retrievalAugmentor,
             FileMetadataSearchTool fileMetadataSearchTool
     ) {
         return AiServices.builder(LocalAssistant.class)
                 .streamingChatModel(ollamaStreamingChatModel)
                 .chatMemoryProvider(chatMemoryProvider)
-                .contentRetriever(contentRetriever)
+                .retrievalAugmentor(retrievalAugmentor)
                 .tools(fileMetadataSearchTool)
                 .build();
     }
