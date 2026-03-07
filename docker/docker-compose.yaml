@@ -261,33 +261,33 @@ services:
       retries: 5
 
   # 重排序
-  gd-cors-tei-reranker:
-    image: ghcr.io/huggingface/text-embeddings-inference:turing-1.5
-    container_name: gd-cors-tei-reranker
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    volumes:
-      - ${STORAGE_PATH_1}/tei/models:/data
-    ports:
-      - "8081:80"
-    networks:
-      - gd-cors-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [ gpu ]
-              device_ids: [ '4' ]
-
-    # 使用 Qwen3 的 0.6B 重排模型
-    command: --model-id Qwen/Qwen3-Reranker-0.6B --revision main
-    restart: unless-stopped
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost/health" ]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+#  gd-cors-tei-reranker:
+#    image: ghcr.io/huggingface/text-embeddings-inference:turing-1.5
+#    container_name: gd-cors-tei-reranker
+#    environment:
+#      - TZ=${TZ:-Asia/Shanghai}
+#    volumes:
+#      - ${STORAGE_PATH_1}/tei/models:/data
+#    ports:
+#      - "9888:9888"
+#    networks:
+#      - gd-cors-network
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              capabilities: [ gpu ]
+#              device_ids: [ '4' ]
+#
+#    # 使用 Qwen3 的 0.6B 重排模型
+#    command: --model-id Qwen/Qwen3-Reranker-0.6B --revision main --port 9888
+#    restart: unless-stopped
+#    healthcheck:
+#      test: [ "CMD", "curl", "-f", "http://localhost/health" ]
+#      interval: 10s
+#      timeout: 5s
+#      retries: 3
 
   # ================================
   # Milvus 所需服务
@@ -347,13 +347,13 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [ "gpu" ]
-              device_ids: [ '5','6','7' ]
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              capabilities: [ "gpu" ]
+#              device_ids: [ '5','6','7' ]
     depends_on:
       - gd-cors-milvus-etcd
       - gd-cors-minio
