@@ -21,7 +21,7 @@ public class FileVectorProducer {
             CorrelationData correlation = new CorrelationData(message.getStorageKey() + "-VECTOR");
             log.debug("发送向量化消息: {}", message.getStorageKey());
             rabbitTemplate.convertAndSend(
-                    RabbitInitConfig.FILE_VECTOR_EXCHANGE,
+                    RabbitInitConfig.FILE_MAIN_EXCHANGE,
                     RabbitInitConfig.FILE_VECTOR_ROUTING_KEY,
                     message,
                     correlation

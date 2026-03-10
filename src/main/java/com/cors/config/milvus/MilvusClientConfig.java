@@ -79,14 +79,14 @@ public class MilvusClientConfig {
                     .build());
 
             // 定义索引
-            IndexParam indexParamForIdField = IndexParam.builder()
-                    .fieldName("id")
-                    .indexType(IndexParam.IndexType.AUTOINDEX)
-                    .build();
             IndexParam indexParamForVectorField = IndexParam.builder()
                     .fieldName("vector")
-                    .indexType(IndexParam.IndexType.AUTOINDEX)
-                    .metricType(IndexParam.MetricType.COSINE) // 指定使用余弦相似度（只关注方向，忽略长度）来计算相似性
+                    .indexType(IndexParam.IndexType.HNSW)
+                    .extraParams(Map.of(
+                            "M", 64,             // 每个节点的邻居数量
+                            "efConstruction", 256        // 索引构建时的搜索范围
+                    ))
+                    .metricType(IndexParam.MetricType.IP) // 指定使用内积 (IP) 计算相似性。由于数据已做 L2 归一化，IP 运算速度最快且结果等效于余弦相似度
                     .build();
 
             // 针对 metadata 字段构建倒排索引
@@ -101,7 +101,6 @@ public class MilvusClientConfig {
                     .build();
 
             List<IndexParam> indexParams = new ArrayList<>();
-            indexParams.add(indexParamForIdField);
             indexParams.add(indexParamForVectorField);
             indexParams.add(indexParamForMetadataStorageKeyField);
 
@@ -109,10 +108,14 @@ public class MilvusClientConfig {
             CreateCollectionReq createCollectionReq = CreateCollectionReq.builder()
                     .collectionName(collectionName)
                     .collectionSchema(schema)
-                    .numShards(1) // With shard number
+                    .numShards(4) // With shard number
                     .indexParams(indexParams)
                     .build();
             client.createCollection(createCollectionReq);
+
+            client.loadCollection(LoadCollectionReq.builder()
+                    .collectionName(collectionName)
+                    .build());
 
             // Get load state of the collection
             GetLoadStateReq getLoadStateReq = GetLoadStateReq.builder()

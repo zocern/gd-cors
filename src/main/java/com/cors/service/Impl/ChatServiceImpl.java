@@ -105,7 +105,7 @@ public class ChatServiceImpl implements ChatService {
             // 保存会话的任务
             Runnable saveOnce = () -> {
                 // (CAS) 保证入库只执行一次
-                if (context.getStatus().compareAndSet(NONE, SAVING)) {
+                if (context.getStatus().compareAndSet(false, true)) {
                     try {
                         String finalAnswer = contentBuilder.toString();
                         if (!finalAnswer.isBlank()) {
@@ -120,10 +120,6 @@ public class ChatServiceImpl implements ChatService {
                                     .assistantType(assistantType)
                                     .build();
                             messageService.save(chatMessageAi); // 入库
-                            ChatStreamContext ctx = contextMap.get(sessionId);
-                            if (ctx != null) {
-                                ctx.getStatus().compareAndSet(SAVING, SUCCESS);
-                            }
                         } else {
                             log.debug("会话 [{}] 生成内容为空，跳过入库", sessionId);
                         }
@@ -217,7 +213,7 @@ public class ChatServiceImpl implements ChatService {
      */
     public Flux<ServerSentEvent<String>> subscribe(Long sessionId, String lastChunkId) {
         ChatStreamContext context = contextMap.get(sessionId);
-        if (context == null || context.getSink() == null || context.getStatus().get() == SUCCESS) {
+        if (context == null || context.getSink() == null || context.getStatus().get()) {
             log.info("会话 [{}] 缓存已失效，通知前端读取历史归档", sessionId);
             // 发送一个一次性的信号事件，告诉前端去查库
             // 这里用 Flux.just 发送单条数据后流就会立即结束 (complete)

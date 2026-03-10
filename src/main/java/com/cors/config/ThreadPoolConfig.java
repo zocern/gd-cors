@@ -9,11 +9,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Configuration
 public class ThreadPoolConfig {
 
-    @Bean("vectorIngestExecutor")
+    @Bean
     public ExecutorService vectorIngestExecutor() {
         final int corePoolSize = 20;
         final int maxPoolSize = 40;
-        final int queueCapacity = 20;
+        final int queueCapacity = 500;
         final long keepAliveSeconds = 60L;
 
         BlockingQueue<Runnable> queue = new LinkedBlockingQueue<>(queueCapacity);

@@ -24,7 +24,7 @@ public class FileStorageDeleteProducer {
             CorrelationData correlation = new CorrelationData(message.getStorageKey() + "-STORAGE-DEL");
             log.info("发送存储删除消息: {}", message.getStorageKey());
             rabbitTemplate.convertAndSend(
-                    RabbitInitConfig.FILE_STORAGE_DELETE_EXCHANGE,
+                    RabbitInitConfig.FILE_MAIN_EXCHANGE,
                     RabbitInitConfig.FILE_STORAGE_DELETE_ROUTING_KEY,
                     message,
                     correlation

@@ -118,7 +118,7 @@ langchain4j:
 #      dimensions: ${LANGCHAIN4J_OPENAI_EMBEDDING_DIMENSION:2048}
   chat:
     memory:
-      max-messages: ${LANGCHAIN4J_CHAT_MEMORY_MAX_MESSAGES:14}
+      max-messages: ${LANGCHAIN4J_CHAT_MEMORY_MAX_MESSAGES:20} # 40k
 
   web-search-engine:
     tavily:

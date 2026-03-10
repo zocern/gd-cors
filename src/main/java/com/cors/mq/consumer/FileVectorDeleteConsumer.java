@@ -74,7 +74,7 @@ public class FileVectorDeleteConsumer {
 
         // 发送到向量删除重试交换机
         rabbitTemplate.convertAndSend(
-                RabbitInitConfig.FILE_VECTOR_DELETE_RETRY_EXCHANGE,
+                RabbitInitConfig.FILE_RETRY_EXCHANGE,
                 RabbitInitConfig.FILE_VECTOR_DELETE_RETRY_ROUTING_KEY,
                 retryMessage
         );

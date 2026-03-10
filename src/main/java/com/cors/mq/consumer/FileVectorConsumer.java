@@ -120,7 +120,7 @@ public class FileVectorConsumer {
         }
 
         rabbitTemplate.convertAndSend(
-                RabbitInitConfig.FILE_VECTOR_RETRY_EXCHANGE,
+                RabbitInitConfig.FILE_RETRY_EXCHANGE,
                 RabbitInitConfig.FILE_VECTOR_RETRY_ROUTING_KEY,
                 message
         );

@@ -24,18 +24,20 @@ async function refreshTokenForSSE() {
   isSseRefreshing = true;
   sseRefreshPromise = (async () => {
     try {
+      // 与 Axios 顶层封装保持一致：
+      // - 不携带 Authorization（使用 cookie 中的 refresh token）
+      // - 开启 withCredentials 以发送 cookie
+      // - 后端返回的数据结构：data.data 为新的 accessToken 字符串
       const refreshResponse = await axios.post(
         `${BASE_URL}/user/auth/refresh`,
         {},
         {
-          headers: {
-            Authorization: userStore.token,
-          },
-        }
+          withCredentials: true,
+        },
       );
 
-      if (refreshResponse.data.code === 200 && refreshResponse.data.data?.token) {
-        const newToken = refreshResponse.data.data.token;
+      if (refreshResponse.data.code === 200 && refreshResponse.data.data) {
+        const newToken = refreshResponse.data.data;
         userStore.setToken(newToken);
         return newToken;
       } else {

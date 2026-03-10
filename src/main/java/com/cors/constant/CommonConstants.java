@@ -20,14 +20,6 @@ public final class CommonConstants {
      */
     public static final String CHUNK_TYPE_ID = "ARCHIVE_FINISHED";
 
-    /**
-     * 入库状态机
-     */
-    public static final int NONE = 0;      // 待处理
-    public static final int SAVING = 1;    // 入库中（锁定状态）
-    public static final int SUCCESS = 2;   // 入库成功（终态）
-
-
     public static final Set<String> BLACKLISTED_TYPES = Set.of(
             // --- 1. 执行文件与系统文件 ---
             "application/x-msdownload",      // .exe, .dll

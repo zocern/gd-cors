@@ -63,10 +63,6 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
     // 文件名最大长度（对应数据库varchar(255)限制）
     private static final Integer MAX_FILENAME_LENGTH = 255;
 
-//    private static final String CHUNK_KEY_PREFIX = "file:upload:chunk:";
-//    private final StringRedisTemplate redisTemplate;
-//    private final RedissonClient redissonClient;
-
     private final FileAssociationService fileAssociationService;
     private final HierarchicalLockHelper hierarchicalLockHelper;
     private final FileMetadataMapper fileMetadataMapper;
@@ -123,7 +119,7 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
         return BeanUtil.copyToList(fileMetadata, FileMetadataVo.class);
     }
 
-    @Override // 当前节点 + 目录结点
+    @Override // 当前节点
     public void DownloadFile(HttpServletResponse response, Long id) {
         if (id == null || id <= 0) {
             throw new BadRequestException("文件ID无效");
@@ -143,10 +139,8 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
         if (!StringUtils.hasText(fileMetadata.getStorageKey())) {
             throw new FileStorageException(String.format("文件存储ID无效, id: %d", id));
         }
-        List<RReadWriteLock> ancestorLocks = new ArrayList<>();
-        ancestorLocks.add(hierarchicalLockHelper.getReadWriteLock(fileMetadata.getParentId()));
-        ancestorLocks.add(hierarchicalLockHelper.getReadWriteLock(id));
-        RLock multiLock = hierarchicalLockHelper.lockAllRead(ancestorLocks);
+        RReadWriteLock fileLock = hierarchicalLockHelper.getReadWriteLock(id);
+        RLock lock = hierarchicalLockHelper.lockRead(fileLock);
         try {
             response.reset();
             response.setCharacterEncoding("UTF-8");
@@ -169,7 +163,7 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
                 throw new FileStorageException(String.format("文件下载失败: %s", e.getMessage()), e);
             }
         } finally {
-            hierarchicalLockHelper.unlockAll(multiLock);
+            hierarchicalLockHelper.unlockAll(lock);
         }
     }
 
@@ -332,11 +326,9 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
         // 前置校验
         validateFile(file);
 
-        // 准备新数据
-        String newOriginalFilename = file.getOriginalFilename();
-        long newFileSize = file.getSize();
         // 生成新的 StorageKey (即使文件名没变，也建议用新的 UUID 防止浏览器缓存或覆盖问题)
-        String newStorageKey = StorageKeyGenerator.generate(newOriginalFilename);
+        String newStorageKey = StorageKeyGenerator.generate(file.getOriginalFilename());
+        long newFileSize = file.getSize();
 
         // 上传新文件到 MinIO (不加锁，纯 IO 操作)
         // 如果这里失败，抛出异常，流程结束，对现有数据无影响
@@ -357,8 +349,8 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
                 throw new NotFoundException("未找到待更新的文件记录");
             }
             oldStorageKey = fileMetadata.getStorageKey();
-            // 更新字段：文件名、大小、StorageKey、更新时间等
-            self.updateFileRecordWithTransaction(id, newOriginalFilename, newFileSize, newStorageKey);
+            // 更新字段：大小、StorageKey、更新时间等
+            self.updateFileRecordWithTransaction(id, newFileSize, newStorageKey);
             updateSuccess = true;
         } finally {
             if (updateSuccess) {
@@ -375,7 +367,6 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
 
     @Transactional
     public void updateFileRecordWithTransaction(Long id,
-                                                String newFilename,
                                                 long newSize,
                                                 String newStorageKey) {
         Long userId = UserContextUtil.getUserId();
@@ -386,12 +377,7 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
             throw new NotFoundException(String.format("未找到待更新的文件记录, ID: %d", id));
         }
 
-        // 同名检查 (仅当文件名发生改变时才检查)
-        if (!oldFileMetadata.getName().equals(newFilename)) {
-            checkDuplicateName(oldFileMetadata.getParentId(), newFilename, id);
-        }
         String oldKey = oldFileMetadata.getStorageKey();
-        oldFileMetadata.setName(newFilename);
         oldFileMetadata.setSize(newSize);
         oldFileMetadata.setStorageKey(newStorageKey);
         oldFileMetadata.setUpdatedBy(userId);

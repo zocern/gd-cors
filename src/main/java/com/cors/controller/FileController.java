@@ -65,7 +65,7 @@ public class FileController {
     /**
      * 文件上传处理
      *
-     * @param file     上传的文件 (来自表单的 'file' 字段)
+     * @param file     上传的文件 (来自表单的 'file' 字段) Content-Type: multipart/form-data
      * @param parentId 文件的父目录ID (可选, null表示根目录)
      * @return 包含新文件元数据的 ResponseEntity
      */

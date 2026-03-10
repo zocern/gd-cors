@@ -23,7 +23,6 @@ import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
 import org.apache.tika.parser.pdf.PDFParserConfig;
-import org.apache.tika.sax.BodyContentHandler;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
 
@@ -32,7 +31,6 @@ import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
 import java.util.function.Supplier;
 
 import static com.cors.constant.CommonConstants.BLACKLISTED_TYPES;
@@ -116,6 +114,8 @@ public class ApacheTikaDocumentParser implements DocumentParser {
                     globalMetadata
             );
 
+        } catch (IllegalArgumentException ie) {
+            throw ie;
         } catch (Exception e) {
             throw new RuntimeException("Document parsing failed", e);
         }
@@ -185,7 +185,7 @@ public class ApacheTikaDocumentParser implements DocumentParser {
                 convert(metadata),
                 4,
                 10000,
-                10,
+                100,
                 500,
                 100
         );
@@ -210,7 +210,7 @@ public class ApacheTikaDocumentParser implements DocumentParser {
                 return String.format("\n\n![Image: %s]\n> %s\n\n", resourceName, description);
             }
         } catch (Exception e) {
-            log.debug("VLM Error processing image {}: {}", resourceName, e.getMessage());
+            log.debug("Vlm error processing image {}: {}", resourceName, e.getMessage());
         }
         return null;
     }
@@ -260,7 +260,7 @@ public class ApacheTikaDocumentParser implements DocumentParser {
             ChatResponse chatResponse = ollamaChatModel.doChat(request);
             return chatResponse.aiMessage().text();
         } catch (Exception e) {
-            log.debug("VLM generation failed: {}", e.getMessage());
+            log.debug("Vlm generation failed: {}", e.getMessage());
             return "";
         }
     }

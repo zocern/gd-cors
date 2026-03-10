@@ -111,13 +111,6 @@
 			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
 
-		<!-- Springdoc OpenAPI webmvc UI -->
-		<dependency>
-			<groupId>org.springdoc</groupId>
-			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-			<version>${openapi.version}</version>
-		</dependency>
-
 		<!-- 参数校验：@Valid / @NotNull 等 -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

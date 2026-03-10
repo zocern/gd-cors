@@ -1,6 +1,7 @@
 package com.cors.vector;
 
 import com.cors.util.MinIoUtil;
+import dev.langchain4j.data.document.BlankDocumentException;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingStore;
@@ -10,10 +11,10 @@ import jakarta.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.io.BufferedInputStream;
 import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Future;
 
 import static com.cors.constant.CommonConstants.METADATA_BATCH_ID;
 import static com.cors.constant.CommonConstants.METADATA_STORAGE_KEY;
@@ -51,9 +52,9 @@ public class DocumentVector {
 
         try (InputStream is = minIoUtil.getObject(storageKey)) {
             log.debug("开始处理文件向量化: {}", storageKey);
-
+            BufferedInputStream bis = new BufferedInputStream(is, 1024 * 1024); // 1MB
             // 解析文档
-            Document document = tikaParser.parse(is, globalMetadata, futures);
+            Document document = tikaParser.parse(bis, globalMetadata, futures);
             log.debug(document.toString());
 
             if (!futures.isEmpty()) {
@@ -62,15 +63,15 @@ public class DocumentVector {
             }
 
             log.debug("向量化入库成功: {}", storageKey);
+        } catch (BlankDocumentException | IllegalArgumentException re) {
+            throw re;
         } catch (Exception e) {
-
             // 取消所有尚未完成的任务
             futures.forEach(f -> {
                 if (f != null && !f.isDone()) f.cancel(true);
             });
-
-            processDeleteDoc(storageKey, batchId); // 出错回滚
-
+            // 出错回滚
+            processDeleteDoc(storageKey, batchId);
             throw new RuntimeException(e);
         }
     }

@@ -10,10 +10,7 @@ import dev.langchain4j.store.embedding.EmbeddingStoreIngestor;
 import lombok.extern.slf4j.Slf4j;
 import org.xml.sax.helpers.DefaultHandler;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
@@ -100,23 +97,16 @@ public class ParallelStreamingContentHandler extends DefaultHandler {
         // 核心逻辑
         int limit = forceSubmitAll ? segments.size() : segments.size() - 1;
 
+        dev.langchain4j.data.document.Metadata metadata = new dev.langchain4j.data.document.Metadata();
+        // 全局 metadata
+        globalMetadata.forEach(metadata::put);
+        // 文件级 metadata
+        metadata.putAll(documentMetadata.toMap());
+
         for (int i = 0; i < limit; i++) {
             TextSegment segment = segments.get(i);
-
-            dev.langchain4j.data.document.Metadata metadata = new dev.langchain4j.data.document.Metadata();
-
-            // 全局 metadata
-            globalMetadata.forEach(metadata::put);
-
-            // 文件级 metadata
-            metadata.putAll(documentMetadata.toMap());
-
-            // 段落级 metadata
-            metadata.putAll(segment.metadata().toMap());
-
             log.debug("metadata: {} ", metadata);
             batchIngestBuffer.add(Document.from(segment.text(), metadata));
-
             if (batchIngestBuffer.size() >= batchIngestSize) {
                 submitBatch();
             }

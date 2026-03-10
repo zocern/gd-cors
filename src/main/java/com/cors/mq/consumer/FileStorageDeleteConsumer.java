@@ -64,7 +64,7 @@ public class FileStorageDeleteConsumer {
 
         FileDeleteMessage retryMessage = new FileDeleteMessage(storageKey, retryCount + 1);
         rabbitTemplate.convertAndSend(
-                RabbitInitConfig.FILE_STORAGE_DELETE_RETRY_EXCHANGE,
+                RabbitInitConfig.FILE_RETRY_EXCHANGE,
                 RabbitInitConfig.FILE_STORAGE_DELETE_RETRY_ROUTING_KEY,
                 retryMessage
         );

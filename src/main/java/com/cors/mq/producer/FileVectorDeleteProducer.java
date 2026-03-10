@@ -25,7 +25,7 @@ public class FileVectorDeleteProducer {
             CorrelationData correlation = new CorrelationData(message.getStorageKey() + "-VECTOR-DEL");
             log.info("发送向量删除消息: {}", message.getStorageKey());
             rabbitTemplate.convertAndSend(
-                    RabbitInitConfig.FILE_VECTOR_DELETE_EXCHANGE,
+                    RabbitInitConfig.FILE_MAIN_EXCHANGE,
                     RabbitInitConfig.FILE_VECTOR_DELETE_ROUTING_KEY,
                     message,
                     correlation

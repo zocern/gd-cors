@@ -11,7 +11,7 @@ WORKDIR /app
 
 COPY --from=build /app/target/*.jar app.jar
 
-# 设置 UTF-8 编码环境，避免中文乱码
+# 设置 UTF-8 编码环境
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 ENV JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8"
@@ -28,13 +28,15 @@ EXPOSE 8080
 
 # ENTRYPOINT ["java", "-jar", "app.jar"]
 
+# Heap + DirectMemory <= 容器内存 × 90%
 ENTRYPOINT ["java", \
     "-server", \
-    "-XX:InitialRAMPercentage=75.0", \
-    "-XX:MaxRAMPercentage=75.0", \
-    "-XX:MinRAMPercentage=75.0", \
+    "-XX:G1NewSizePercent=20", \
+    "-XX:InitialRAMPercentage=65.0", \
+    "-XX:MaxRAMPercentage=65.0", \
+    "-XX:MinRAMPercentage=65.0", \
     "-XX:MaxDirectMemorySize=8g", \
-    "-XX:+UseZGC", \
+    "-XX:+UseG1GC", \
     "-jar", "app.jar"]
 
 

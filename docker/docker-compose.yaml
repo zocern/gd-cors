@@ -278,7 +278,7 @@ services:
 #          devices:
 #            - driver: nvidia
 #              capabilities: [ gpu ]
-#              device_ids: [ '4' ]
+#              device_ids: [ '7' ]
 #
 #    # 使用 Qwen3 的 0.6B 重排模型
 #    command: --model-id Qwen/Qwen3-Reranker-0.6B --revision main --port 9888
@@ -318,7 +318,6 @@ services:
   gd-cors-milvus:
     user: "0:0"
     image: milvusdb/milvus:v2.6.6
-#    image: milvusdb/milvus:v2.6.7-gpu
     command: [ "milvus", "run", "standalone" ]
     security_opt:
       - seccomp:unconfined
@@ -347,6 +346,7 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
+#    image: milvusdb/milvus:v2.6.7-gpu
 #    deploy:
 #      resources:
 #        reservations:
@@ -362,7 +362,7 @@ services:
   # ================================
   # 应用服务 Spring Boot
   # ================================
-#  gd-cors-app:
+#  gd-cors-app-1:
 #    user: "0:0"
 #    build:
 #      context: ..
@@ -472,10 +472,9 @@ services:
 ##    deploy:
 ##      resources:
 ##        limits:
-##          cpus: '24.0'       # 限制使用 24 个核心（防止解析大文件时占满全机 CPU）
-##          memory: 64G        # 限制容器最大使用 64G 内存
+##          memory: 32G        # 限制容器最大使用 32G 内存
 ##        reservations:
-##          memory: 16G         # 启动时最少预留 16G 内存
+##          memory: 8G         # 启动时最少预留 8G 内存
 #
 #    restart: unless-stopped
 #    logging:
@@ -491,6 +490,137 @@ services:
 #      - gd-cors-milvus-etcd
 #      - gd-cors-milvus
 #      - gd-cors-minio
+
+
+#  gd-cors-app-2:
+#    user: "0:0"
+#    build:
+#      context: ..
+#      dockerfile: Dockerfile
+#    image: gd-cors-app:latest
+#    ports:
+#      - "${SERVER_PORT:-8080}:8080"
+#    extra_hosts:
+#      - "host.docker.internal:host-gateway"
+#    volumes:
+#      - ${STORAGE_PATH_1}/app/logs:/app/logs
+#    networks:
+#      - gd-cors-network
+#    environment:
+#      # --- Server ---
+#      SERVER_PORT: ${SERVER_PORT}
+#      SERVER_SERVLET_CONTEXT_PATH: ${SERVER_SERVLET_CONTEXT_PATH}
+#      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+#      SERVLET_MULTIPART_MAX_FILE_SIZE: ${SERVLET_MULTIPART_MAX_FILE_SIZE}
+#      SERVLET_MULTIPART_MAX_REQUEST_SIZE: ${SERVLET_MULTIPART_MAX_REQUEST_SIZE}
+#
+#      # --- Redis ---
+#      REDIS_HOST: ${REDIS_HOST}
+#      REDIS_PORT: ${REDIS_PORT}
+#      REDIS_PASSWORD: ${REDIS_PASSWORD}
+#      REDIS_DATABASE: ${REDIS_DATABASE}
+#      REDIS_CONNECT_TIMEOUT: ${REDIS_CONNECT_TIMEOUT}
+#
+#      # --- MySQL ---
+#      DATASOURCE_HOST: ${DATASOURCE_HOST}
+#      DATASOURCE_PORT: ${DATASOURCE_PORT}
+#      DATASOURCE_DATABASE: ${DATASOURCE_DATABASE}
+#      DATASOURCE_USERNAME: ${DATASOURCE_USERNAME}
+#      DATASOURCE_PASSWORD: ${DATASOURCE_PASSWORD}
+#      SQL_INIT_MODE: ${SQL_INIT_MODE}
+#      THREAD_POOL_CORE_SIZE: ${THREAD_POOL_CORE_SIZE}
+#
+#      # --- RabbitMQ ---
+#      RABBITMQ_HOST: ${RABBITMQ_HOST}
+#      RABBITMQ_PORT: ${RABBITMQ_PORT}
+#      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME}
+#      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+#      RABBITMQ_VIRTUAL_HOST: ${RABBITMQ_VIRTUAL_HOST}
+#      RABBITMQ_CONSUMER_CONCURRENC: ${RABBITMQ_CONSUMER_CONCURRENC}
+#      RABBITMQ_CONSUMER_MAX_CONCURRENCY: ${RABBITMQ_CONSUMER_MAX_CONCURRENCY}
+#      RABBITMQ_CONSUMER_PREFETCH: ${RABBITMQ_CONSUMER_PREFETCH}
+#
+#      # --- LangChain4j (Online - Zhipu/GLM) ---
+#      LANGCHAIN4J_OPENAI_ONLINE_BASE_URL: ${LANGCHAIN4J_OPENAI_ONLINE_BASE_URL}
+#      LANGCHAIN4J_OPENAI_ONLINE_MODEL_NAME: ${LANGCHAIN4J_OPENAI_ONLINE_MODEL_NAME}
+#      LANGCHAIN4J_OPENAI_ONLINE_MODEL_ZHIPU_API_KEY: ${LANGCHAIN4J_OPENAI_ONLINE_MODEL_ZHIPU_API_KEY}
+#      LANGCHAIN4J_OPENAI_ONLINE_LOG_REQUESTS: ${LANGCHAIN4J_OPENAI_ONLINE_LOG_REQUESTS}
+#      LANGCHAIN4J_OPENAI_ONLINE_LOG_RESPONSES: ${LANGCHAIN4J_OPENAI_ONLINE_LOG_RESPONSES}
+#      LANGCHAIN4J_OPENAI_ONLINE_TIMEOUT: ${LANGCHAIN4J_OPENAI_ONLINE_TIMEOUT}
+#
+#
+#      # --- LangChain4j (Local - Ollama) ---
+#      LANGCHAIN4J_OLLAMA_CHAT_BASE_URL: ${LANGCHAIN4J_OLLAMA_CHAT_BASE_URL}
+#      LANGCHAIN4J_OLLAMA_CHAT_MODEL_NAME: ${LANGCHAIN4J_OLLAMA_CHAT_MODEL_NAME}
+#      LANGCHAIN4J_OLLAMA_CHAT_LOG_REQUESTS: ${LANGCHAIN4J_OLLAMA_CHAT_LOG_REQUESTS}
+#      LANGCHAIN4J_OLLAMA_CHAT_LOG_RESPONSES: ${LANGCHAIN4J_OLLAMA_CHAT_LOG_RESPONSES}
+#      LANGCHAIN4J_OLLAMA_CHAT_TIMEOUT: ${LANGCHAIN4J_OLLAMA_CHAT_TIMEOUT}
+#
+#      LANGCHAIN4J_OLLAMA_VL_BASE_URL: ${LANGCHAIN4J_OLLAMA_VL_BASE_URL}
+#      LANGCHAIN4J_OLLAMA_VL_MODEL_NAME: ${LANGCHAIN4J_OLLAMA_VL_MODEL_NAME}
+#      LANGCHAIN4J_OLLAMA_VL_TEMPERATURE: ${LANGCHAIN4J_OLLAMA_VL_TEMPERATURE}
+#      LANGCHAIN4J_OLLAMA_VL_LOG_REQUESTS: ${LANGCHAIN4J_OLLAMA_VL_LOG_REQUESTS}
+#      LANGCHAIN4J_OLLAMA_VL_LOG_RESPONSES: ${LANGCHAIN4J_OLLAMA_VL_LOG_RESPONSES}
+#      LANGCHAIN4J_OLLAMA_VL_TIMEOUT: ${LANGCHAIN4J_OLLAMA_VL_TIMEOUT}
+#      LANGCHAIN4J_OLLAMA_VL_MAX_RETRIES: ${LANGCHAIN4J_OLLAMA_VL_MAX_RETRIES}
+#
+#      # --- LangChain4j (Embedding) ---
+#      LANGCHAIN4J_OLLAMA_EMBEDDING_BASE_URL: ${LANGCHAIN4J_OLLAMA_EMBEDDING_BASE_URL}
+#      LANGCHAIN4J_OLLAMA_EMBEDDING_MODEL_NAME: ${LANGCHAIN4J_OLLAMA_EMBEDDING_MODEL_NAME}
+#      LANGCHAIN4J_OLLAMA_EMBEDDING_LOG_REQUESTS: ${LANGCHAIN4J_OLLAMA_EMBEDDING_LOG_REQUESTS}
+#      LANGCHAIN4J_OLLAMA_EMBEDDING_LOG_RESPONSES: ${LANGCHAIN4J_OLLAMA_EMBEDDING_LOG_RESPONSES}
+#      LANGCHAIN4J_OLLAMA_EMBEDDING_TIMEOUT: ${LANGCHAIN4J_OLLAMA_EMBEDDING_TIMEOUT}
+#      LANGCHAIN4J_OLLAMA_EMBEDDING_MAX_RETRIES: ${LANGCHAIN4J_OLLAMA_EMBEDDING_MAX_RETRIES}
+#
+#      LANGCHAIN4J_CHAT_MEMORY_MAX_MESSAGES: ${LANGCHAIN4J_CHAT_MEMORY_MAX_MESSAGES}
+#
+#      # --- LangChain4j (Search - Tavily) ---
+#      LANGCHAIN4J_WEB_SEARCH_ENGINE_TAVILY_MCP_SERVER_URL: ${LANGCHAIN4J_WEB_SEARCH_ENGINE_TAVILY_MCP_SERVER_URL}
+#      LANGCHAIN4J_TAVILY_API_KEY: ${LANGCHAIN4J_TAVILY_API_KEY}
+#      LANGCHAIN4J_WEB_SEARCH_ENGINE_TAVILY_MAX_RESULTS: ${LANGCHAIN4J_WEB_SEARCH_ENGINE_TAVILY_MAX_RESULTS}
+#
+#      # --- Milvus ---
+#      MILVUS_HOST: ${MILVUS_HOST}
+#      MILVUS_PORT: ${MILVUS_PORT}
+#      MILVUS_TOKEN: ${MILVUS_TOKEN}
+#      MILVUS_DATABASE: ${MILVUS_DATABASE}
+#      MILVUS_COLLECTION: ${MILVUS_COLLECTION}
+#      MILVUS_DIMENSION: ${MILVUS_DIMENSION}
+#
+#      # --- MinIO ---
+#      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+#      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+#      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+#      MINIO_BUCKET_FILES: ${MINIO_BUCKET_FILES}
+#
+#      # --- JWT / Security ---
+#      USER_PASSWORD_LENGTH: ${USER_PASSWORD_LENGTH}
+#      JWT_ACCESS_EXPIRE: ${JWT_ACCESS_EXPIRE}
+#      JWT_REFRESH_EXPIRE: ${JWT_REFRESH_EXPIRE}
+#      JWT_SECURITY: ${JWT_SECURITY}
+#
+##    deploy:
+##      resources:
+##        limits:
+##          memory: 32G        # 限制容器最大使用 32G 内存
+##        reservations:
+##          memory: 8G         # 启动时最少预留 8G 内存
+#
+#    restart: unless-stopped
+#    logging:
+#      driver: "local"
+#      options:
+#        max-size: "10m"
+#        max-file: "3"
+#        compress: "true"
+#    depends_on:
+#      - gd-cors-mysql
+#      - gd-cors-redis
+#      - gd-cors-rabbitmq
+#      - gd-cors-milvus-etcd
+#      - gd-cors-milvus
+#      - gd-cors-minio
+
 
 
   # ================================
