@@ -12,7 +12,8 @@ USE `gd_cors`;
 -- ============================================
 CREATE TABLE IF NOT EXISTS `users`
 (
-    `id`       BIGINT UNSIGNED AUTO_INCREMENT COMMENT '用户ID，主键' PRIMARY KEY,
+    `id`       BIGINT UNSIGNED AUTO_INCREMENT COMMENT '用户ID，主键'
+    PRIMARY KEY,
     `name`     VARCHAR(50)                            NULL COMMENT '用户名',
     `email`    VARCHAR(100)                           NOT NULL COMMENT '邮箱（最大长度100字符）',
     `password` VARCHAR(60)                            NOT NULL COMMENT '密码（BCrypt加密后固定60字符）',
@@ -26,24 +27,23 @@ CREATE TABLE IF NOT EXISTS `users`
     DEFAULT CHARSET = utf8mb4
     COLLATE = utf8mb4_unicode_ci;
 
-CREATE INDEX `idx_user_role` ON `users` (`role`);
-CREATE INDEX `idx_user_created` ON `users` (`created`);
-
 -- 初始化管理员
 -- admin@example.com
 -- 123456
-INSERT INTO `users` (`name`, `email`, `password`, `roleType`)
-SELECT 'admin', 'admin@example.com', '$2a$10$ZL53w3UmBV9cAUqKJa2mnOk1FtUeo8XCL0bkhNH3gUloX2fIWjRz.', 'ADMIN'
+INSERT INTO `users` (`name`, `email`, `password`, `role`)
+SELECT 'admin', 'admin@example.com', '$2a$10$ijByxRcdHqyoM3dHeTVGHOuzAic73CrBZaW6YJs5gdcPNGbM3peU2', 'ADMIN'
     WHERE NOT EXISTS (
     SELECT 1 FROM `users` WHERE `email` = 'admin@example.com'
 );
+
 
 -- ============================================
 -- 2. 会话表 (sessions)
 -- ============================================
 CREATE TABLE IF NOT EXISTS `sessions`
 (
-    `id`      BIGINT AUTO_INCREMENT COMMENT '会话ID，主键' PRIMARY KEY,
+    `id`      BIGINT AUTO_INCREMENT COMMENT '会话ID，主键'
+    PRIMARY KEY,
     `user_id` BIGINT                             NOT NULL COMMENT '用户ID',
     `title`   VARCHAR(255)                       NOT NULL COMMENT '会话标题',
     `created` DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL COMMENT '创建时间',
@@ -62,7 +62,8 @@ CREATE INDEX `idx_session_user_id` ON `sessions` (`user_id`);
 -- ============================================
 CREATE TABLE IF NOT EXISTS `messages`
 (
-    `id`             BIGINT AUTO_INCREMENT COMMENT '消息ID，主键' PRIMARY KEY,
+    `id`             BIGINT AUTO_INCREMENT COMMENT '消息ID，主键'
+    PRIMARY KEY,
     `session_id`     BIGINT                      NOT NULL COMMENT '所属会话ID',
     `sender_type`    VARCHAR(10)                 NOT NULL COMMENT '发送者类型：0=用户，1=机器人，2=系统',
     `message_type`   VARCHAR(10)                 NOT NULL COMMENT '消息类型：文本，图片，音频，文件，JSON',
@@ -111,7 +112,8 @@ CREATE INDEX `idx_parent_id_id` ON `file_metadata` (`parent_id`, `id`);
 -- ============================================
 CREATE TABLE IF NOT EXISTS `file_association`
 (
-    `id`                     BIGINT AUTO_INCREMENT COMMENT '主键ID' PRIMARY KEY,
+    `id`                     BIGINT AUTO_INCREMENT COMMENT '主键ID'
+    PRIMARY KEY,
     `file_metadata_id`       BIGINT                              NOT NULL COMMENT '关联的文件ID',
     `project_name`           VARCHAR(200)                        NOT NULL COMMENT '项目名称',
     `project_start_date`     DATE                                NULL COMMENT '项目创建日期',
@@ -132,7 +134,7 @@ CREATE TABLE IF NOT EXISTS `file_association`
 
 CREATE TABLE file_vector_status (
                                     storage_key VARCHAR(255) PRIMARY KEY,
-                                    status ENUM('PROCESSING','SUCCESS','FAILED','UNSUPPORTED') NOT NULL,
+                                    status ENUM('PENDING','PROCESSING','SUCCESS','FAILED','UNSUPPORTED') NOT NULL,
                                     updated TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                                     created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                                     retry_count INT DEFAULT 0,
@@ -140,20 +142,3 @@ CREATE TABLE file_vector_status (
 );
 
 CREATE INDEX idx_file_vector_status_status_created ON file_vector_status(status, created DESC);
-
-
--- -- 创建任务队列表
--- CREATE TABLE IF NOT EXISTS `doc_process_task` (
---                                                   `id` bigint NOT NULL COMMENT '主键ID',
---                                                   `bucket_name` varchar(64) NOT NULL COMMENT 'MinIO Bucket名称',
---     `object_name` varchar(512) NOT NULL COMMENT 'MinIO中的完整路径',
---     `file_size` bigint DEFAULT 0 COMMENT '文件大小(字节)',
---     `status` tinyint DEFAULT 0 COMMENT '状态: 0=待处理, 1=处理中, 2=成功, -1=失败',
---     `error_msg` text COMMENT '错误信息(截取前500字符)',
---     `retry_count` int DEFAULT 0 COMMENT '重试次数',
---     `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
---     `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最后更新时间',
---     PRIMARY KEY (`id`),
---     UNIQUE KEY `uk_obj` (`bucket_name`,`object_name`) COMMENT '唯一约束：防止同一个文件重复入队',
---     KEY `idx_status` (`status`) COMMENT '普通索引：用于快速拉取待处理任务'
---     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='RAG文档向量化处理任务表';

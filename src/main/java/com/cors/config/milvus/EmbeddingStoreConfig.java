@@ -4,6 +4,7 @@ import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.milvus.MilvusEmbeddingStore;
 import io.milvus.common.clientenum.ConsistencyLevelEnum;
+import io.milvus.param.MetricType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -36,6 +37,7 @@ public class EmbeddingStoreConfig {
                 .port(port)
                 .databaseName(databaseName)
                 .collectionName(collectionName)
+                .metricType(MetricType.IP) // 已归一化，COSINE=IP
                 // 维度必须与的 EmbeddingModel 生成的向量维度一致
                 .dimension(dimension)
                 // 在执行向量相似度搜索（search）时，同时把向量本身也从 Milvus 返回

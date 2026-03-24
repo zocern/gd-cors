@@ -27,17 +27,15 @@ CREATE TABLE IF NOT EXISTS `users`
     DEFAULT CHARSET = utf8mb4
     COLLATE = utf8mb4_unicode_ci;
 
-CREATE INDEX `idx_user_role` ON `users` (`role`);
-CREATE INDEX `idx_user_created` ON `users` (`created`);
-
 -- 初始化管理员
 -- admin@example.com
 -- 123456
-INSERT INTO `users` (`name`, `email`, `password`, `roleType`)
-SELECT 'admin', 'admin@example.com', '$2a$10$ZL53w3UmBV9cAUqKJa2mnOk1FtUeo8XCL0bkhNH3gUloX2fIWjRz.', 'ADMIN'
+INSERT INTO `users` (`name`, `email`, `password`, `role`)
+SELECT 'admin', 'admin@example.com', '$2a$10$ijByxRcdHqyoM3dHeTVGHOuzAic73CrBZaW6YJs5gdcPNGbM3peU2', 'ADMIN'
     WHERE NOT EXISTS (
     SELECT 1 FROM `users` WHERE `email` = 'admin@example.com'
 );
+
 
 -- ============================================
 -- 2. 会话表 (sessions)
@@ -87,15 +85,15 @@ CREATE INDEX `idx_message_session_id` ON `messages` (`session_id`);
 -- ============================================
 CREATE TABLE IF NOT EXISTS `file_metadata`
 (
-    `id`          BIGINT UNSIGNED AUTO_INCREMENT COMMENT '文件ID，主键'
-    PRIMARY KEY,
+    `id`          BIGINT UNSIGNED AUTO_INCREMENT COMMENT '文件ID，主键' PRIMARY KEY,
     `name`        VARCHAR(255)                    NOT NULL COMMENT '文件名（含扩展名）',
     `parent_id`   BIGINT UNSIGNED                 NULL COMMENT '父目录ID（NULL 表示根目录）',
+    `parent_name` VARCHAR(255)                    NULL COMMENT '父文件名',
     `folder`      TINYINT(1)      DEFAULT 0       NOT NULL COMMENT '是否为文件夹：0=文件，1=文件夹',
     `size`        BIGINT UNSIGNED DEFAULT 0       NULL COMMENT '文件大小（字节）',
     `storage_key` VARCHAR(255)                    NULL COMMENT '文件在服务器的存储位置（UUID格式36字符+扩展名）',
     `md5`         CHAR(32)                        NULL COMMENT '文件 MD5',
-    `association` TINYINT(1)      DEFAULT 0  NOT NULL COMMENT '关联信息是否已存在：0=未存在，1=已存在',
+    `association`      TINYINT(1)      DEFAULT 0  NOT NULL COMMENT '关联信息是否已存在：0=未存在，1=已存在',
     `created_by`  BIGINT                          NULL COMMENT '创建者ID',
     `updated_by`  BIGINT                          NULL COMMENT '更新者ID',
     `created`     DATETIME        DEFAULT CURRENT_TIMESTAMP NOT NULL COMMENT '上传时间',

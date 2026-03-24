@@ -7,8 +7,8 @@ spring:
     active: ${SPRING_PROFILES_ACTIVE:dev}
   servlet:
     multipart:
-      max-file-size: ${SERVLET_MULTIPART_MAX_FILE_SIZE:512MB} # 单个文件的大小上限
-      max-request-size: ${SERVLET_MULTIPART_MAX_REQUEST_SIZE:512MB} # 整个请求（包含所有文件+表单数据）的大小上限
+      max-file-size: ${SERVLET_MULTIPART_MAX_FILE_SIZE:1073741824} # 单个文件的大小上限
+      max-request-size: ${SERVLET_MULTIPART_MAX_REQUEST_SIZE:1073741824} # 整个请求（包含所有文件+表单数据）的大小上限
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -88,34 +88,8 @@ langchain4j:
 
   huggingface:
     reranker:
-      base-url: ${RERANKER_URL:http://gd-cors-tei-reranker:9888}
+      base-url: ${RERANKER_BASE_URL:http://gd-cors-tei-reranker:11438}
 
-  #      max-segments-per-batch: ${LANGCHAIN4J_OLLAMA_EMBEDDING_MAX_SEGMENTS_PER_BATCH:10}
-#      dimensions: ${LANGCHAIN4J_OLLAMA_EMBEDDING_DIMENSION:4096}
-
-  #    vlm-model:
-#      base-url: ${LANGCHAIN4J_OPENAI_EMBEDDING_BASE_URL:https://open.bigmodel.cn}
-#      api-key: ${gd-cors.langchain4j.open-ai.model.zhipu-api-key}
-#      model-name: ${LANGCHAIN4J_OPENAI_EMBEDDING_MODEL_NAME:glm-4.6v}
-#      log-requests: ${LANGCHAIN4J_OPENAI_LOG_REQUESTS:true}
-#      log-responses: ${LANGCHAIN4J_OPENAI_LOG_RESPONSES:true}
-
-#    online-streaming-chat-model:
-#      base-url: ${LANGCHAIN4J_OPENAI_ONLINE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
-#      api-key: ${gd-cors.langchain4j.open-ai.model.qwen-api-key}
-#      model-name: ${LANGCHAIN4J_OPENAI_ONLINE_MODEL_NAME:qwen-plus}
-#      log-requests: ${LANGCHAIN4J_OPENAI_LOG_REQUESTS:true}
-#      log-responses: ${LANGCHAIN4J_OPENAI_LOG_RESPONSES:true}
-#      timeout: ${LANGCHAIN4J_OPENAI_ONLINE_TIMEOUT:120s}
-#
-#    embedding-model:
-#      base-url: ${LANGCHAIN4J_OPENAI_EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
-#      api-key: ${gd-cors.langchain4j.open-ai.model.qwen-api-key}
-#      model-name: text-embedding-v4
-#      log-requests: true
-#      log-responses: true
-#      max-segments-per-batch: 10
-#      dimensions: ${LANGCHAIN4J_OPENAI_EMBEDDING_DIMENSION:2048}
   chat:
     memory:
       max-messages: ${LANGCHAIN4J_CHAT_MEMORY_MAX_MESSAGES:20} # 40k
@@ -155,3 +129,7 @@ jwt:
   security: ${JWT_SECURITY:cors}
 
 
+ingestion:
+  run-on-startup: ${RUN_ON_STARTUP:false}
+  local-paths: ${LOCAL_PATHS:""}
+  parent-id: ${PARENT_ID:0}

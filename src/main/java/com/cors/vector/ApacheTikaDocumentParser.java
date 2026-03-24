@@ -140,39 +140,39 @@ public class ApacheTikaDocumentParser implements DocumentParser {
         // PDF 配置
         PDFParserConfig pdfConfig = new PDFParserConfig();
         pdfConfig.setEnableAutoSpace(true);
-        pdfConfig.setExtractInlineImages(true);
+        pdfConfig.setExtractInlineImages(false); // 不识别图片
         pdfConfig.setOcrStrategy(PDFParserConfig.OCR_STRATEGY.NO_OCR);
         pdfConfig.setSortByPosition(true);
         parseContext.set(PDFParserConfig.class, pdfConfig);
 
         // 嵌入式文档提取器 (拦截 PDF/Word 内部图片)
-        parseContext.set(EmbeddedDocumentExtractor.class, new EmbeddedDocumentExtractor() {
-            @Override
-            public boolean shouldParseEmbedded(Metadata m) {
-                return true;
-            }
-
-            @Override
-            public void parseEmbedded(InputStream embeddedStream, ContentHandler handler, Metadata m, boolean outputHtml) // m 嵌入对象的元信息
-                    throws SAXException, IOException {
-
-                String contentType = m.get(Metadata.CONTENT_TYPE);
-                String resourceName = getOrDefault(TikaCoreProperties.RESOURCE_NAME_KEY, "embedded-resource");
-
-                // 拦截图片资源
-                if (contentType != null && contentType.startsWith("image/")) {
-                    log.debug("Detected embedded image: Type={}, Name={}", contentType, resourceName);
-
-                    byte[] imageBytes = readBytesWithLimit(embeddedStream);
-                    // 复用公共逻辑
-                    String formattedOutput = processImageAndFormat(imageBytes, contentType, resourceName);
-
-                    if (!isNullOrBlank(formattedOutput)) {
-                        handler.characters(formattedOutput.toCharArray(), 0, formattedOutput.length());
-                    }
-                }
-            }
-        });
+//        parseContext.set(EmbeddedDocumentExtractor.class, new EmbeddedDocumentExtractor() {
+//            @Override
+//            public boolean shouldParseEmbedded(Metadata m) {
+//                return true;
+//            }
+//
+//            @Override
+//            public void parseEmbedded(InputStream embeddedStream, ContentHandler handler, Metadata m, boolean outputHtml) // m 嵌入对象的元信息
+//                    throws SAXException, IOException {
+//
+//                String contentType = m.get(Metadata.CONTENT_TYPE);
+//                String resourceName = getOrDefault(TikaCoreProperties.RESOURCE_NAME_KEY, "embedded-resource");
+//
+//                // 拦截图片资源
+//                if (contentType != null && contentType.startsWith("image/")) {
+//                    log.debug("Detected embedded image: Type={}, Name={}", contentType, resourceName);
+//
+//                    byte[] imageBytes = readBytesWithLimit(embeddedStream);
+//                    // 复用公共逻辑
+//                    String formattedOutput = processImageAndFormat(imageBytes, contentType, resourceName);
+//
+//                    if (!isNullOrBlank(formattedOutput)) {
+//                        handler.characters(formattedOutput.toCharArray(), 0, formattedOutput.length());
+//                    }
+//                }
+//            }
+//        });
 
         // 流式字符串处理
         // 每次消费一个文件就创建新的 handler 信号量独立

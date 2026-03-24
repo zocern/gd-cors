@@ -31,6 +31,7 @@ EXPOSE 8080
 # Heap + DirectMemory <= 容器内存 × 90%
 ENTRYPOINT ["java", \
     "-server", \
+    "-XX:+UnlockExperimentalVMOptions", \
     "-XX:G1NewSizePercent=20", \
     "-XX:InitialRAMPercentage=65.0", \
     "-XX:MaxRAMPercentage=65.0", \
@@ -38,5 +39,3 @@ ENTRYPOINT ["java", \
     "-XX:MaxDirectMemorySize=8g", \
     "-XX:+UseG1GC", \
     "-jar", "app.jar"]
-
-
