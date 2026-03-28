@@ -186,8 +186,8 @@ services:
               capabilities: [gpu]
               device_ids: ['7']
 
-    # command: --model-id BAAI/bge-reranker-v2-m3 --port 11438 --max-client-batch-size 32
-    command: --model-id /data --port 11438 --max-client-batch-size 32
+    # command: --model-id BAAI/bge-reranker-v2-m3 --port 11438 --max-client-batch-size 64
+    command: --model-id /data --port 11438 --max-client-batch-size 64
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:11438/health" ]
