@@ -7,12 +7,15 @@ import com.cors.domain.dto.FileAssociationDto;
 import com.cors.domain.dto.FolderDto;
 import com.cors.domain.dto.MoveFileDto;
 import com.cors.domain.dto.RenameDto;
+import com.cors.domain.dto.SwitchVersionDto;
 import com.cors.domain.vo.FileAssociationVo;
 import com.cors.domain.vo.FileMetadataVo;
 import com.cors.domain.vo.FileVectorStatusVo;
+import com.cors.domain.vo.FileVersionVo;
 import com.cors.enums.FileVectorStatusType;
 import com.cors.service.FileAssociationService;
 import com.cors.service.FileMetadataService;
+import com.cors.service.FileVersionService;
 import com.cors.service.FileVectorStatusService;
 import com.cors.util.MinIoUtil;
 import jakarta.servlet.http.HttpServletResponse;
@@ -37,6 +40,7 @@ public class FileController {
     private final FileMetadataService fileMetadataService;
     private final FileAssociationService fileAssociationService;
     private final FileVectorStatusService fileVectorStatusService;
+    private final FileVersionService fileVersionService;
 
     /**
      * 查询文件信息
@@ -169,6 +173,28 @@ public class FileController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public ResponseResult<String> fileVectorRetry(@RequestParam @NotBlank(message = "storageKey 不能为空") String storageKey) {
         fileMetadataService.fileVectorRetry(storageKey);
+        return ResponseResult.success();
+    }
+
+    // ==================== 版本管理接口 ====================
+
+    /**
+     * 查询文件的所有版本列表
+     */
+    @GetMapping("/{id}/versions")
+    public ResponseResult<List<FileVersionVo>> listVersions(
+            @PathVariable @NotNull(message = "文件ID不能为空") Long id) {
+        return ResponseResult.success(fileVersionService.listVersions(id));
+    }
+
+    /**
+     * 切换到指定版本（支持回滚到任意历史版本）
+     */
+    @PutMapping("/{id}/versions/switch")
+    public ResponseResult<Void> switchVersion(
+            @PathVariable @NotNull(message = "文件ID不能为空") Long id,
+            @Valid @RequestBody SwitchVersionDto dto) {
+        fileVersionService.switchVersion(id, dto.getVersion());
         return ResponseResult.success();
     }
 }

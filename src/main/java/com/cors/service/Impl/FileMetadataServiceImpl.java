@@ -9,8 +9,9 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.PageDTO;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 
 import com.cors.domain.dto.FolderDto;
-import com.cors.domain.entity.FileMetadata;
 import com.cors.domain.entity.FileAssociation;
+import com.cors.domain.entity.FileMetadata;
+import com.cors.domain.entity.FileVersion;
 import com.cors.domain.entity.FileVectorStatus;
 import com.cors.domain.vo.FileMetadataVo;
 import com.cors.enums.FileVectorStatusType;
@@ -18,6 +19,7 @@ import com.cors.exception.BadRequestException;
 import com.cors.exception.FileStorageException;
 import com.cors.lock.HierarchicalLockHelper;
 import com.cors.mapper.FileMetadataMapper;
+import com.cors.mapper.FileVersionMapper;
 import com.cors.mapper.FileVectorStatusMapper;
 import com.cors.mq.message.FileDeleteMessage;
 import com.cors.mq.message.FileVectorMessage;
@@ -66,6 +68,7 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
     private final FileAssociationService fileAssociationService;
     private final HierarchicalLockHelper hierarchicalLockHelper;
     private final FileMetadataMapper fileMetadataMapper;
+    private final FileVersionMapper fileVersionMapper;
     private final FileVectorStatusMapper fileVectorStatusMapper;
     private final FileStorageDeleteProducer fileStorageDeleteProducer;
     private final FileVectorDeleteProducer fileVectorDeleteProducer;
@@ -304,10 +307,21 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
                 .updatedBy(userId)
                 .size(fileSize)
                 .storageKey(storageKey) // 存储 MinIO 的对象名称
+                .currentVersion(1)      // 初始版本号
+                .versionCount(1)        // 初始版本总数
                 .build();
         if (!this.save(fileMetadata)) {
             throw new FileStorageException("保存文件记录到数据库失败");
         }
+        // 写入第一个版本记录
+        FileVersion firstVersion = FileVersion.builder()
+                .fileId(id)
+                .version(1)
+                .storageKey(storageKey)
+                .size(fileSize)
+                .createdBy(userId)
+                .build();
+        fileVersionMapper.insert(firstVersion);
         try {
             FileVectorStatus status = new FileVectorStatus();
             status.setStorageKey(storageKey);
@@ -326,65 +340,76 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
         // 前置校验
         validateFile(file);
 
-        // 生成新的 StorageKey (即使文件名没变，也建议用新的 UUID 防止浏览器缓存或覆盖问题)
+        // 生成新的 StorageKey
         String newStorageKey = StorageKeyGenerator.generate(file.getOriginalFilename());
         long newFileSize = file.getSize();
 
-        // 上传新文件到 MinIO (不加锁，纯 IO 操作)
-        // 如果这里失败，抛出异常，流程结束，对现有数据无影响
+        // 上传新文件到 MinIO（不加锁，纯 IO 操作）
         uploadToStorage(file, newStorageKey);
 
-
-        String oldStorageKey = null;
         boolean updateSuccess = false;
 
-        // 数据库原子更新 (加锁)
-        // 获取文件写锁，防止并发修改同一文件
+        // 数据库原子更新（加锁）
         RReadWriteLock fileLock = hierarchicalLockHelper.getReadWriteLock(id);
         RLock lock = hierarchicalLockHelper.lockWrite(fileLock);
         try {
-            // 查旧数据 (用于后续清理)
             FileMetadata fileMetadata = this.getById(id);
             if (fileMetadata == null) {
                 throw new NotFoundException("未找到待更新的文件记录");
             }
-            oldStorageKey = fileMetadata.getStorageKey();
-            // 更新字段：大小、StorageKey、更新时间等
-            self.updateFileRecordWithTransaction(id, newFileSize, newStorageKey);
+            String oldStorageKey = fileMetadata.getStorageKey();
+            // 追加新版本（事务内注册 afterCommit 钩子，保证 DB 提交后再发 MQ）
+            self.appendVersionWithTransaction(id, fileMetadata, newFileSize, newStorageKey, oldStorageKey);
             updateSuccess = true;
         } finally {
-            if (updateSuccess) {
-                // 清理旧文件、旧向量 + 新向量化
-                handlePostUpdateSuccess(oldStorageKey, newStorageKey);
-            } else {
-                // 清理刚才上传的新文件
-                log.error("文件更新数据库失败，准备回滚新上传的文件: {}", newStorageKey);
+            if (!updateSuccess) {
+                // 数据库写入失败，回滚新上传的 MinIO 文件
+                log.error("版本追加失败，回滚新上传的文件: {}", newStorageKey);
                 fileStorageDeleteProducer.sendFileStorageDeleteMessage(new FileDeleteMessage(newStorageKey, 0));
             }
             hierarchicalLockHelper.unlockAll(lock);
         }
     }
 
+    /**
+     * 追加新版本事务方法：
+     * 1. 插入 file_versions 记录
+     * 2. 更新 file_metadata（storageKey、currentVersion、versionCount、size）
+     * 3. 插入新版本的 file_vector_status 记录
+     * 4. 事务提交后（afterCommit）：触发新版本向量化 + 删除旧版本 Milvus 向量
+     */
     @Transactional
-    public void updateFileRecordWithTransaction(Long id,
-                                                long newSize,
-                                                String newStorageKey) {
+    public void appendVersionWithTransaction(Long fileId,
+                                             FileMetadata fileMetadata,
+                                             long newSize,
+                                             String newStorageKey,
+                                             String oldStorageKey) {
         Long userId = UserContextUtil.getUserId();
 
-        // 获取旧数据
-        FileMetadata oldFileMetadata = this.getById(id);
-        if (oldFileMetadata == null) {
-            throw new NotFoundException(String.format("未找到待更新的文件记录, ID: %d", id));
+        // 计算新版本号（当前总版本数 + 1）
+        int newVersion = fileMetadata.getVersionCount() == null ? 2 : fileMetadata.getVersionCount() + 1;
+
+        // 插入新版本记录
+        FileVersion newVer = FileVersion.builder()
+                .fileId(fileId)
+                .version(newVersion)
+                .storageKey(newStorageKey)
+                .size(newSize)
+                .createdBy(userId)
+                .build();
+        fileVersionMapper.insert(newVer);
+
+        // 更新 file_metadata：激活新版本
+        fileMetadata.setStorageKey(newStorageKey);
+        fileMetadata.setSize(newSize);
+        fileMetadata.setCurrentVersion(newVersion);
+        fileMetadata.setVersionCount(newVersion);
+        fileMetadata.setUpdatedBy(userId);
+        if (!this.updateById(fileMetadata)) {
+            throw new FileStorageException("更新文件记录失败");
         }
 
-        String oldKey = oldFileMetadata.getStorageKey();
-        oldFileMetadata.setSize(newSize);
-        oldFileMetadata.setStorageKey(newStorageKey);
-        oldFileMetadata.setUpdatedBy(userId);
-
-        if (!this.updateById(oldFileMetadata)) {
-            throw new FileStorageException("更新文件记录数据库失败");
-        }
+        // 插入新版本的向量化状态
         try {
             FileVectorStatus status = new FileVectorStatus();
             status.setStorageKey(newStorageKey);
@@ -395,7 +420,24 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
         } catch (Exception e) {
             throw new FileStorageException("保存向量化状态到数据库失败", e);
         }
-        log.debug("文件记录更新成功. ID: {}, OldKey: {}, NewKey: {}", id, oldKey, newStorageKey);
+
+        log.debug("新版本追加成功. fileId={}, version={}, storageKey={}", fileId, newVersion, newStorageKey);
+
+        // 事务提交后再发 MQ，保证 DB 已落库
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        // 触发新版本向量化
+                        fileVectorProducer.sendFileVectorMessage(new FileVectorMessage(newStorageKey));
+                        // 删除旧版本 Milvus 向量（deleteStatus=false：只删向量，保留状态记录）
+                        if (oldStorageKey != null) {
+                            fileVectorDeleteProducer.sendFileVectorDeleteMessage(
+                                    new FileDeleteMessage(oldStorageKey, 0, false));
+                        }
+                    }
+                }
+        );
     }
 
 
@@ -738,7 +780,6 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
 
         Set<Long> fileIdsToDelete = new HashSet<>();
         Set<Long> associationIdsToDelete = new HashSet<>();
-        List<String> storageKeysToDelete = new ArrayList<>();
 
         List<FileMetadata> targets;
 
@@ -750,11 +791,6 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
 
         for (FileMetadata f : targets) {
             fileIdsToDelete.add(f.getId());
-
-            if (!Boolean.TRUE.equals(f.getFolder())
-                    && StringUtils.hasText(f.getStorageKey())) {
-                storageKeysToDelete.add(f.getStorageKey());
-            }
         }
 
         if (!fileIdsToDelete.isEmpty()) {
@@ -763,12 +799,29 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
                             new LambdaQueryWrapper<FileAssociation>()
                                     .in(FileAssociation::getFileMetadataId, fileIdsToDelete)
                     );
-
             associationIdsToDelete.addAll(
                     associations.stream()
                             .map(FileAssociation::getId)
                             .toList()
             );
+        }
+
+        // 收集所有版本的 storageKey（包含历史版本），用于彻底清理 MinIO 和向量库
+        List<String> allStorageKeysToDelete = new ArrayList<>();
+        if (!fileIdsToDelete.isEmpty()) {
+            List<FileVersion> allVersions = fileVersionMapper.selectList(
+                    new LambdaQueryWrapper<FileVersion>()
+                            .in(FileVersion::getFileId, fileIdsToDelete)
+            );
+            allVersions.forEach(v -> allStorageKeysToDelete.add(v.getStorageKey()));
+
+            // 删除版本记录
+            if (!allVersions.isEmpty()) {
+                fileVersionMapper.delete(
+                        new LambdaQueryWrapper<FileVersion>()
+                                .in(FileVersion::getFileId, fileIdsToDelete)
+                );
+            }
         }
 
         if (!this.removeByIds(fileIdsToDelete)) {
@@ -778,14 +831,17 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
             throw new FileStorageException("删除文件关联失败");
         }
 
-        if (!storageKeysToDelete.isEmpty()) {
+        // 事务提交后，清理所有版本的 MinIO 文件和向量数据（deleteStatus=true：彻底删除）
+        if (!allStorageKeysToDelete.isEmpty()) {
             TransactionSynchronizationManager.registerSynchronization(
                     new TransactionSynchronization() {
                         @Override
                         public void afterCommit() {
-                            for (String storageKey : storageKeysToDelete) {
-                                fileStorageDeleteProducer.sendFileStorageDeleteMessage(new FileDeleteMessage(storageKey, 0));
-                                fileVectorDeleteProducer.sendFileVectorDeleteMessage(new FileDeleteMessage(storageKey, 0));
+                            for (String storageKey : allStorageKeysToDelete) {
+                                fileStorageDeleteProducer.sendFileStorageDeleteMessage(
+                                        new FileDeleteMessage(storageKey, 0, true));
+                                fileVectorDeleteProducer.sendFileVectorDeleteMessage(
+                                        new FileDeleteMessage(storageKey, 0, true));
                             }
                         }
                     }
@@ -932,20 +988,6 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
             log.error("MinIO 上传失败: {}", storageKey, e);
             throw new FileStorageException("文件存储服务异常", e);
         }
-    }
-
-    /**
-     * 事务成功后的后置处理：清理旧资源 + 触发新流程
-     */
-    private void handlePostUpdateSuccess(String oldStorageKey, String newStorageKey) {
-        // 异步清理旧资源 (MinIO文件 + 向量库数据)
-        // 建议：将两个删除动作合并到一个 MQ 消息或异步任务中，确保主线程不阻塞
-
-        // 这里 sendFileVectorDeleteMessage 同时负责：1.删MinIO 2.删向量库对应的doc
-        fileStorageDeleteProducer.sendFileStorageDeleteMessage(new FileDeleteMessage(oldStorageKey, 0));
-        fileVectorDeleteProducer.sendFileVectorDeleteMessage(new FileDeleteMessage(oldStorageKey, 0));
-        // 触发新文件的向量化
-        fileVectorProducer.sendFileVectorMessage(new FileVectorMessage(newStorageKey));
     }
 
     /**

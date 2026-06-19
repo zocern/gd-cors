@@ -34,13 +34,17 @@ public class FileVectorDeleteConsumer {
         String storageKey = message.getStorageKey();
 
         try {
-            log.info("开始处理 Vector 删除任务，storageKey={}", storageKey);
+            log.info("开始处理 Vector 删除任务，storageKey={}, deleteStatus={}", storageKey, message.isDeleteStatus());
 
-            // 遍历 List 进行删除
+            // 删除 Milvus 中的向量数据
             documentVector.processDeleteDoc(storageKey, null);
 
-            // 删除状态表记录
-            fileVectorStatusMapper.deleteById(storageKey);
+            // 根据 deleteStatus 决定是否同时删除状态表记录：
+            // true  = 文件彻底删除，状态记录一并清理
+            // false = 版本切换，保留状态记录供切回时复用
+            if (message.isDeleteStatus()) {
+                fileVectorStatusMapper.deleteById(storageKey);
+            }
 
             // 成功 ACK
             channel.basicAck(tag, false);
@@ -69,8 +73,8 @@ public class FileVectorDeleteConsumer {
             return;
         }
 
-        // 构造新消息
-        FileDeleteMessage retryMessage = new FileDeleteMessage(storageKey, retryCount + 1);
+        // 构造新消息，保留原始 deleteStatus，确保重试语义与首次消费一致
+        FileDeleteMessage retryMessage = new FileDeleteMessage(storageKey, retryCount + 1, message.isDeleteStatus());
 
         // 发送到向量删除重试交换机
         rabbitTemplate.convertAndSend(

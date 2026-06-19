@@ -21,6 +21,12 @@ public class FileMetadataVo {
 
     private Boolean association;
 
+    /** 当前激活的版本号，文件夹为 null */
+    private Integer currentVersion;
+
+    /** 总版本数，文件夹为 null */
+    private Integer versionCount;
+
     private Long createdBy;
 
     private Long updatedBy;

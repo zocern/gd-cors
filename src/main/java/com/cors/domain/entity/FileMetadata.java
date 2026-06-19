@@ -64,6 +64,16 @@ public class FileMetadata {
      */
     private Boolean association;
 
+    /**
+     * 当前激活的版本号（从1开始），文件夹该字段为 null
+     */
+    private Integer currentVersion;
+
+    /**
+     * 总版本数（冗余字段，避免 COUNT 查询），文件夹该字段为 null
+     */
+    private Integer versionCount;
+
     private Long createdBy;
 
     private Long updatedBy;
