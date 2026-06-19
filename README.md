@@ -25,6 +25,7 @@
 - **RAG（检索增强生成）**：用户上传文档后，系统自动解析、向量化并存入 Milvus，AI 对话时可检索相关知识片段作为上下文。
 - **多模型支持**：同时支持本地 Ollama 模型（Qwen 系列）和在线云端模型（智谱 GLM 系列），用户可在对话时自由切换。
 - **文件管理**：提供完整的文件系统（上传、下载、重命名、移动、删除、文件夹管理），文件存储于 MinIO 对象存储，支持**文件版本管理**（多版本追加、历史版本查看、任意版本回滚）。
+- **标签管理**：支持为文件/文件夹绑定多个标签，标签可按项目分组，支持按标签分页查询关联文件，并发操作通过分布式锁保证数据一致性。
 - **流式对话**：基于 SSE（Server-Sent Events）实现实时流式输出，支持断点续传和手动停止。
 - **多会话管理**：每个用户可创建多个独立会话，会话历史持久化存储，对话记忆基于 Redis 实现。
 
@@ -465,7 +466,33 @@ web-gd-cors/src/
 
 唯一索引：`uk_file_version(file_id, version)`、`uk_storage_key(storage_key)`；索引：`idx_file_id`
 
-### 6.6 项目关联信息表 `file_association`
+### 6.6 标签表 `tags`（新增）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT UNSIGNED PK AUTO_INCREMENT | 标签 ID |
+| name | VARCHAR(100) | 标签名称 |
+| project | VARCHAR(200) | 所属项目（可选，用于分组过滤） |
+| created_by | BIGINT | 创建者 ID |
+| updated_by | BIGINT | 更新者 ID |
+| created | DATETIME | 创建时间 |
+| updated | DATETIME | 更新时间 |
+
+唯一索引：`uk_tag_name_project(name, project)`
+
+### 6.7 文件标签关联表 `file_tag_relation`（新增）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT UNSIGNED PK AUTO_INCREMENT | 关联记录 ID |
+| file_id | BIGINT UNSIGNED | 关联的 file_metadata.id |
+| tag_id | BIGINT UNSIGNED | 关联的 tags.id |
+| created_by | BIGINT | 创建者 ID |
+| created | DATETIME | 创建时间 |
+
+唯一索引：`uk_file_tag(file_id, tag_id)`；索引：`idx_tag_id`
+
+### 6.8 项目关联信息表 `file_association`
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -481,7 +508,7 @@ web-gd-cors/src/
 | created | TIMESTAMP | 创建时间 |
 | updated | TIMESTAMP | 更新时间 |
 
-### 6.7 文件向量化状态表 `file_vector_status`
+### 6.9 文件向量化状态表 `file_vector_status`
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -826,7 +853,7 @@ ${STORAGE_PATH_1}/
 | POST | `/files/upload` | 上传文件 | 登录 |
 | POST | `/files/update` | 更新文件内容 | 登录 |
 | POST | `/files/folder` | 创建文件夹 | 登录 |
-| GET | `/files` | 列出目录内容 | 登录 |
+| GET | `/files` | 列出目录内容（按目录 `id`）或按标签分页查询（`tag-id` + `pageNum` + `pageSize`） | 登录 |
 | GET | `/files/{id}` | 获取文件元数据 | 登录 |
 | GET | `/files/{id}/content` | 下载文件 | 登录 |
 | GET | `/files/{id}/info` | 获取文件关联信息 | 登录 |
@@ -841,4 +868,20 @@ ${STORAGE_PATH_1}/
 | POST | `/files/vector/retry` | 重试向量化 | 登录 |
 | GET | `/files/{id}/versions` | 查询文件版本列表 | 登录 |
 | PUT | `/files/{id}/versions/switch` | 切换到指定版本（回滚） | 登录 |
+| GET | `/files/{id}/tags` | 查询文件绑定的标签列表 | 登录 |
+| POST | `/files/{id}/tags` | 为文件绑定标签（批量） | 登录 |
+| PUT | `/files/{id}/tags` | 更新文件标签（全量替换） | 登录 |
+| DELETE | `/files/{id}/tags` | 解绑文件标签（批量） | 登录 |
+
+### 13.6 标签接口 `/tags`
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| POST | `/tags` | 创建标签 | 登录 |
+| PUT | `/tags/{id}` | 更新标签 | 登录 |
+| DELETE | `/tags/{id}` | 删除标签（同时解除所有文件绑定） | 登录 |
+| GET | `/tags` | 查询标签列表（支持 `project`/`keyword` 过滤，最多 1000 条） | 登录 |
+| GET | `/tags/page` | 分页查询标签列表（支持 `project`/`keyword` 过滤） | 登录 |
+| GET | `/tags/{id}` | 查询单个标签详情 | 登录 |
+| GET | `/tags/{id}/files` | 按标签分页查询绑定的文件/文件夹列表 | 登录 |
 

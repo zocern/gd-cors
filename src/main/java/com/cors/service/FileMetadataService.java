@@ -21,7 +21,7 @@ public interface FileMetadataService extends IService<FileMetadata> {
 
     void DownloadFile(HttpServletResponse response, Long id);
 
-    void uploadFile(MultipartFile file, Long parentId);
+    Long uploadFile(MultipartFile file, Long parentId);
 
     void updateFile(MultipartFile file, Long id);
 

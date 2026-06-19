@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.PageDTO;
 import com.cors.domain.ResponseResult;
 import com.cors.domain.StorageUsage;
 import com.cors.domain.dto.FileAssociationDto;
+import com.cors.domain.dto.FileTagDto;
 import com.cors.domain.dto.FolderDto;
 import com.cors.domain.dto.MoveFileDto;
 import com.cors.domain.dto.RenameDto;
@@ -12,11 +13,13 @@ import com.cors.domain.vo.FileAssociationVo;
 import com.cors.domain.vo.FileMetadataVo;
 import com.cors.domain.vo.FileVectorStatusVo;
 import com.cors.domain.vo.FileVersionVo;
+import com.cors.domain.vo.TagVo;
 import com.cors.enums.FileVectorStatusType;
 import com.cors.service.FileAssociationService;
 import com.cors.service.FileMetadataService;
 import com.cors.service.FileVersionService;
 import com.cors.service.FileVectorStatusService;
+import com.cors.service.TagService;
 import com.cors.util.MinIoUtil;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -41,6 +44,7 @@ public class FileController {
     private final FileAssociationService fileAssociationService;
     private final FileVectorStatusService fileVectorStatusService;
     private final FileVersionService fileVersionService;
+    private final TagService tagService;
 
     /**
      * 查询文件信息
@@ -51,12 +55,24 @@ public class FileController {
     }
 
     @GetMapping("/{id}")
-    public ResponseResult<FileMetadataVo> getFile(@PathVariable @NotNull(message = "文件ID不能为空") Long id) {
-        return ResponseResult.success(fileMetadataService.getFileById(id));
+    public ResponseResult<FileMetadataVo> getFile(@PathVariable @NotNull(message = "文件ID不能为空") Long id,
+                                                  @RequestParam(value = "with-tags", defaultValue = "false") boolean withTags) {
+        FileMetadataVo vo = fileMetadataService.getFileById(id);
+        if (withTags) {
+            vo.setTags(tagService.getTagsByFileId(id));
+        }
+        return ResponseResult.success(vo);
     }
 
     @GetMapping
-    public ResponseResult<List<FileMetadataVo>> listFiles(@RequestParam(required = false) Long id) {
+    public ResponseResult<?> listFiles(@RequestParam(required = false) Long id,
+                                       @RequestParam(value = "tag-id", required = false) Long tagId,
+                                       @RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
+                                       @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize) {
+        if (tagId != null) {
+            // 按标签维度分页查询，如需全量请使用 GET /tags/{id}/files
+            return ResponseResult.success(tagService.getFilesByTagId(tagId, pageNum, pageSize));
+        }
         return ResponseResult.success(fileMetadataService.getFileListById(id));
     }
 
@@ -76,8 +92,16 @@ public class FileController {
     @PostMapping("/upload")
     @ResponseStatus(HttpStatus.CREATED)
     public ResponseResult<Void> uploadFile(@RequestParam("file") @NotNull(message = "文件不能为空") MultipartFile file,
-                                           @RequestParam(value = "parent-id", required = false) Long parentId) {
-        fileMetadataService.uploadFile(file, parentId);
+                                           @RequestParam(value = "parent-id", required = false) Long parentId,
+                                           @RequestParam(value = "tag-ids", required = false) List<Long> tagIds) {
+        // 上传前先校验标签合法性，避免文件已落库后绑定失败导致数据残留
+        if (tagIds != null && !tagIds.isEmpty()) {
+            tagService.validateTagsExist(tagIds);
+        }
+        Long fileId = fileMetadataService.uploadFile(file, parentId);
+        if (tagIds != null && !tagIds.isEmpty()) {
+            tagService.bindTags(fileId, tagIds);
+        }
         return ResponseResult.success();
     }
 
@@ -195,6 +219,51 @@ public class FileController {
             @PathVariable @NotNull(message = "文件ID不能为空") Long id,
             @Valid @RequestBody SwitchVersionDto dto) {
         fileVersionService.switchVersion(id, dto.getVersion());
+        return ResponseResult.success();
+    }
+
+    // ==================== 文件标签管理接口 ====================
+
+    /**
+     * 查询文件/文件夹绑定的所有标签
+     */
+    @GetMapping("/{id}/tags")
+    public ResponseResult<List<TagVo>> getFileTags(
+            @PathVariable @NotNull(message = "文件ID不能为空") Long id) {
+        return ResponseResult.success(tagService.getTagsByFileId(id));
+    }
+
+    /**
+     * 为文件/文件夹追加绑定标签（不影响已有绑定）
+     */
+    @PostMapping("/{id}/tags")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ResponseResult<Void> bindFileTags(
+            @PathVariable @NotNull(message = "文件ID不能为空") Long id,
+            @Valid @RequestBody FileTagDto dto) {
+        tagService.bindTags(id, dto.getTagIds());
+        return ResponseResult.success();
+    }
+
+    /**
+     * 更新文件/文件夹的标签绑定（全量替换）
+     */
+    @PutMapping("/{id}/tags")
+    public ResponseResult<Void> updateFileTags(
+            @PathVariable @NotNull(message = "文件ID不能为空") Long id,
+            @Valid @RequestBody FileTagDto dto) {
+        tagService.updateFileTags(id, dto.getTagIds());
+        return ResponseResult.success();
+    }
+
+    /**
+     * 解绑文件/文件夹的指定标签
+     */
+    @DeleteMapping("/{id}/tags")
+    public ResponseResult<Void> unbindFileTags(
+            @PathVariable @NotNull(message = "文件ID不能为空") Long id,
+            @Valid @RequestBody FileTagDto dto) {
+        tagService.unbindTags(id, dto.getTagIds());
         return ResponseResult.success();
     }
 }

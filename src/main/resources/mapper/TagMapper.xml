@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.cors.mapper.TagMapper">
+
+    <!-- 查询某文件/文件夹绑定的所有标签 -->
+    <select id="selectTagsByFileId" parameterType="long" resultType="com.cors.domain.entity.Tag">
+        SELECT t.*
+        FROM tags t
+                 INNER JOIN file_tag_relation r ON t.id = r.tag_id
+        WHERE r.file_id = #{fileId}
+        ORDER BY t.name
+    </select>
+
+    <!-- 按标签ID分页查询绑定的文件/文件夹列表 -->
+    <select id="selectFilesByTagId" resultType="com.cors.domain.vo.FileMetadataVo">
+        SELECT fm.id,
+               fm.name,
+               fm.parent_id,
+               fm.parent_name,
+               fm.folder,
+               fm.size,
+               fm.association,
+               fm.current_version,
+               fm.version_count,
+               fm.created_by,
+               fm.updated_by,
+               fm.created,
+               fm.updated
+        FROM file_metadata fm
+                 INNER JOIN file_tag_relation r ON fm.id = r.file_id
+        WHERE r.tag_id = #{tagId}
+        ORDER BY fm.updated DESC, fm.id DESC
+    </select>
+</mapper>

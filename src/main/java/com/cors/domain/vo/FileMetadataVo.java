@@ -3,6 +3,7 @@ package com.cors.domain.vo;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class FileMetadataVo {
@@ -26,6 +27,9 @@ public class FileMetadataVo {
 
     /** 总版本数，文件夹为 null */
     private Integer versionCount;
+
+    /** 绑定的标签列表（按需填充，非所有接口都返回） */
+    private List<TagVo> tags;
 
     private Long createdBy;
 

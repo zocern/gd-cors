@@ -11,6 +11,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cors.domain.dto.FolderDto;
 import com.cors.domain.entity.FileAssociation;
 import com.cors.domain.entity.FileMetadata;
+import com.cors.domain.entity.FileTagRelation;
 import com.cors.domain.entity.FileVersion;
 import com.cors.domain.entity.FileVectorStatus;
 import com.cors.domain.vo.FileMetadataVo;
@@ -19,6 +20,7 @@ import com.cors.exception.BadRequestException;
 import com.cors.exception.FileStorageException;
 import com.cors.lock.HierarchicalLockHelper;
 import com.cors.mapper.FileMetadataMapper;
+import com.cors.mapper.FileTagRelationMapper;
 import com.cors.mapper.FileVersionMapper;
 import com.cors.mapper.FileVectorStatusMapper;
 import com.cors.mq.message.FileDeleteMessage;
@@ -70,6 +72,7 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
     private final FileMetadataMapper fileMetadataMapper;
     private final FileVersionMapper fileVersionMapper;
     private final FileVectorStatusMapper fileVectorStatusMapper;
+    private final FileTagRelationMapper fileTagRelationMapper;
     private final FileStorageDeleteProducer fileStorageDeleteProducer;
     private final FileVectorDeleteProducer fileVectorDeleteProducer;
     private final FileVectorProducer fileVectorProducer;
@@ -242,7 +245,7 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
 //    }
 
     @Override
-    public void uploadFile(MultipartFile file, Long parentId) {
+    public Long uploadFile(MultipartFile file, Long parentId) {
         // 前置校验 (Fail Fast)
         validateFile(file);
 
@@ -264,15 +267,22 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
             self.saveFileRecordWithTransaction(parentId, id, originalFilename, fileSize, storageKey);
             saveSuccess = true;
         } finally {
-            if (saveSuccess) {
-                // 发送向量化消息
-                fileVectorProducer.sendFileVectorMessage(new FileVectorMessage(storageKey));
-            } else {
-                log.error("数据库记录保存失败，准备回滚 MinIO 文件: {}", storageKey);
-                fileStorageDeleteProducer.sendFileStorageDeleteMessage(new FileDeleteMessage(storageKey, 0));
+            // 异常隔离：MQ 发送失败不能覆盖业务异常（业务异常优先抛出给调用方）
+            try {
+                if (saveSuccess) {
+                    // 发送向量化消息
+                    fileVectorProducer.sendFileVectorMessage(new FileVectorMessage(storageKey));
+                } else {
+                    log.error("数据库记录保存失败，准备回滚 MinIO 文件: {}", storageKey);
+                    fileStorageDeleteProducer.sendFileStorageDeleteMessage(new FileDeleteMessage(storageKey, 0));
+                }
+            } catch (Exception mqEx) {
+                // 仅记日志，不向上抛，避免覆盖 try 块中的原始业务异常
+                log.error("MQ 消息发送失败 (saveSuccess={}), storageKey={}", saveSuccess, storageKey, mqEx);
             }
             hierarchicalLockHelper.unlockAll(lock);
         }
+        return id;
     }
 
     @Transactional
@@ -362,10 +372,15 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
             self.appendVersionWithTransaction(id, fileMetadata, newFileSize, newStorageKey, oldStorageKey);
             updateSuccess = true;
         } finally {
-            if (!updateSuccess) {
-                // 数据库写入失败，回滚新上传的 MinIO 文件
-                log.error("版本追加失败，回滚新上传的文件: {}", newStorageKey);
-                fileStorageDeleteProducer.sendFileStorageDeleteMessage(new FileDeleteMessage(newStorageKey, 0));
+            // 异常隔离：MQ 发送失败不能覆盖业务异常
+            try {
+                if (!updateSuccess) {
+                    // 数据库写入失败，回滚新上传的 MinIO 文件
+                    log.error("版本追加失败，回滚新上传的文件: {}", newStorageKey);
+                    fileStorageDeleteProducer.sendFileStorageDeleteMessage(new FileDeleteMessage(newStorageKey, 0));
+                }
+            } catch (Exception mqEx) {
+                log.error("MQ 回滚消息发送失败，newStorageKey={}", newStorageKey, mqEx);
             }
             hierarchicalLockHelper.unlockAll(lock);
         }
@@ -822,6 +837,14 @@ public class FileMetadataServiceImpl extends ServiceImpl<FileMetadataMapper, Fil
                                 .in(FileVersion::getFileId, fileIdsToDelete)
                 );
             }
+        }
+
+        // 级联清理文件标签关联（避免孤儿记录）
+        if (!fileIdsToDelete.isEmpty()) {
+            fileTagRelationMapper.delete(
+                    new LambdaQueryWrapper<FileTagRelation>()
+                            .in(FileTagRelation::getFileId, fileIdsToDelete)
+            );
         }
 
         if (!this.removeByIds(fileIdsToDelete)) {
